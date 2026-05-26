@@ -1,10 +1,6 @@
 /**
- * FilterSidebar — the left rail with provider, category and module filters
- * plus the free-text search box.
- *
- * The sidebar is dumb: it receives the full list of available facets (so we
- * don't show empty checkboxes for providers that aren't in the snapshot) and
- * reports clicks back to the parent which holds the canonical filter state.
+ * FilterSidebar — provider, category and module filters using shadcn sidebar
+ * primitives from the radix-sera preset (menuColor / menuAccent).
  */
 
 "use client";
@@ -18,10 +14,23 @@ import {
   IconCategory,
 } from "@tabler/icons-react";
 
-import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInput,
+  SidebarMenu,
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarSeparator,
+} from "@/components/ui/sidebar";
 
 export interface Facet {
   value: string;
@@ -51,63 +60,60 @@ interface FilterSidebarProps {
 
 export function FilterSidebar(props: FilterSidebarProps) {
   return (
-    <aside className="flex h-full flex-col gap-4 p-4">
-      <div className="relative">
-        <IconSearch
-          className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-          aria-hidden
-        />
-        <Input
-          value={props.search}
-          onChange={(e) => props.onSearchChange(e.target.value)}
-          placeholder="Search address, type, tag…"
-          className="pl-8"
-          aria-label="Search resources"
-        />
-      </div>
+    <SidebarProvider defaultOpen>
+      <Sidebar collapsible="none" className="h-full w-full">
+        <SidebarHeader>
+          <div className="relative">
+            <IconSearch
+              className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+            />
+            <SidebarInput
+              value={props.search}
+              onChange={(e) => props.onSearchChange(e.target.value)}
+              placeholder="Search address, type, tag…"
+              className="pl-8"
+              aria-label="Search resources"
+            />
+          </div>
+          <div className="flex items-center justify-between px-1">
+            <Label>Filters</Label>
+            {props.activeCount > 0 ? (
+              <Button variant="link" size="xs" onClick={props.onClear}>
+                Clear {props.activeCount}
+              </Button>
+            ) : null}
+          </div>
+        </SidebarHeader>
 
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
-          Filters
-        </span>
-        {props.activeCount > 0 ? (
-          <button
-            type="button"
-            onClick={props.onClear}
-            className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-          >
-            Clear {props.activeCount}
-          </button>
-        ) : null}
-      </div>
-
-      <ScrollArea className="-mr-2 flex-1 pr-2">
-        <FacetGroup
-          icon={<IconCubeUnfolded className="size-3.5" aria-hidden />}
-          label="Providers"
-          facets={props.providers}
-          active={props.activeProviders}
-          onToggle={props.onProviderToggle}
-        />
-        <Separator className="my-3" />
-        <FacetGroup
-          icon={<IconCategory className="size-3.5" aria-hidden />}
-          label="Categories"
-          facets={props.categories}
-          active={props.activeCategories}
-          onToggle={props.onCategoryToggle}
-        />
-        <Separator className="my-3" />
-        <FacetGroup
-          icon={<IconFolderOpen className="size-3.5" aria-hidden />}
-          label="Modules"
-          facets={props.modules}
-          active={props.activeModules}
-          onToggle={props.onModuleToggle}
-          emptyLabel="No modules"
-        />
-      </ScrollArea>
-    </aside>
+        <SidebarContent>
+          <FacetGroup
+            icon={<IconCubeUnfolded aria-hidden />}
+            label="Providers"
+            facets={props.providers}
+            active={props.activeProviders}
+            onToggle={props.onProviderToggle}
+          />
+          <SidebarSeparator />
+          <FacetGroup
+            icon={<IconCategory aria-hidden />}
+            label="Categories"
+            facets={props.categories}
+            active={props.activeCategories}
+            onToggle={props.onCategoryToggle}
+          />
+          <SidebarSeparator />
+          <FacetGroup
+            icon={<IconFolderOpen aria-hidden />}
+            label="Modules"
+            facets={props.modules}
+            active={props.activeModules}
+            onToggle={props.onModuleToggle}
+            emptyLabel="No modules"
+          />
+        </SidebarContent>
+      </Sidebar>
+    </SidebarProvider>
   );
 }
 
@@ -129,39 +135,31 @@ function FacetGroup({
   emptyLabel = "Nothing yet",
 }: FacetGroupProps) {
   return (
-    <div>
-      <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+    <SidebarGroup>
+      <SidebarGroupLabel>
         {icon}
         {label}
-      </div>
-      {facets.length === 0 ? (
-        <p className="px-2 text-xs text-muted-foreground/70">{emptyLabel}</p>
-      ) : (
-        <ul className="space-y-0.5">
-          {facets.map((f) => {
-            const isActive = active.has(f.value);
-            return (
-              <li key={f.value}>
-                <button
-                  type="button"
+      </SidebarGroupLabel>
+      <SidebarGroupContent>
+        {facets.length === 0 ? (
+          <p className="px-3 text-xs text-muted-foreground">{emptyLabel}</p>
+        ) : (
+          <SidebarMenu>
+            {facets.map((f) => (
+              <SidebarMenuItem key={f.value}>
+                <SidebarMenuButton
+                  isActive={active.has(f.value)}
                   onClick={() => onToggle(f.value)}
-                  className={cn(
-                    "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1 text-sm transition",
-                    "hover:bg-muted",
-                    isActive && "bg-muted font-medium text-foreground"
-                  )}
-                  aria-pressed={isActive}
+                  aria-pressed={active.has(f.value)}
                 >
-                  <span className="truncate">{f.label}</span>
-                  <span className="font-mono text-xs text-muted-foreground tabular-nums">
-                    {f.count}
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
+                  <span>{f.label}</span>
+                  <SidebarMenuBadge>{f.count}</SidebarMenuBadge>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            ))}
+          </SidebarMenu>
+        )}
+      </SidebarGroupContent>
+    </SidebarGroup>
   );
 }

@@ -95,8 +95,8 @@ export default function DashboardPage() {
       />
 
       <div className="mx-auto flex w-full max-w-7xl gap-6 px-4 py-6">
-        <div className="hidden w-60 shrink-0 lg:block">
-          <div className="sticky top-[60px] h-[calc(100svh-72px)] rounded-lg border bg-card/30">
+        <div className="hidden w-64 shrink-0 lg:block">
+          <div className="sticky top-[60px] h-[calc(100svh-72px)]">
             <FilterSidebar
               search={search}
               onSearchChange={setSearch}
