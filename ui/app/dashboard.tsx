@@ -14,10 +14,15 @@ import { CommandPalette } from "@/components/command-palette";
 import { CopyText } from "@/components/copy-button";
 import { ErrorsBanner } from "@/components/errors-banner";
 import { ExportMenu } from "@/components/export-menu";
+import { buildFilterChips, FilterChips } from "@/components/filter-chips";
 import { FilterSidebar } from "@/components/filter-sidebar";
 import { Header } from "@/components/header";
+import { AttentionBanner, StatusChart } from "@/components/insights-panel";
+import { ResourceDetailSheet } from "@/components/resource-detail-sheet";
 import { ResourceGrid } from "@/components/resource-grid";
 import { useDashboardHotkeys } from "@/components/shortcuts-sheet";
+import { useToast } from "@/components/toast-provider";
+import { ViewToolbar } from "@/components/view-toolbar";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -27,7 +32,6 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SummaryBar } from "@/components/summary-bar";
 import { useSnapshot } from "@/lib/api";
 import {
@@ -40,16 +44,34 @@ import {
   groupByFromParams,
   mergeFilters,
   parseFilterSpec,
+  resourceDomId,
   summariseResources,
   type FilterState,
   type GroupByMode,
 } from "@/lib/filters";
+import {
+  deleteView,
+  loadSavedViews,
+  saveView,
+  type SavedView,
+} from "@/lib/saved-views";
 import type { Resource, Status } from "@/lib/types";
+import {
+  QUICK_PRESETS,
+  sortResources,
+  type Density,
+  type SortDir,
+  type SortKey,
+} from "@/lib/views";
 
 const EMPTY_RESOURCES: Resource[] = [];
 const GROUP_BY_KEY = "terraview_group_by";
+const DENSITY_KEY = "terraview_density";
+const SORT_KEY = "terraview_sort_key";
+const SORT_DIR_KEY = "terraview_sort_dir";
 
 export function Dashboard() {
+  const { toast } = useToast();
   const router = useRouter();
   const searchParams = useSearchParams();
   const {
@@ -64,17 +86,30 @@ export function Dashboard() {
     connectionState,
     signIn,
     signOut,
+    version,
   } = useSnapshot();
 
-  const [filters, setFilters] = React.useState<FilterState>(() =>
-    filtersFromSearchParams(searchParams),
-  );
-  const [activeStatuses, setActiveStatuses] = React.useState<Set<Status>>(
-    new Set(),
-  );
+  const [filters, setFilters] = React.useState<FilterState>(() => {
+    const f = filtersFromSearchParams(searchParams);
+    return { ...f, statuses: new Set() };
+  });
+  const [activeStatuses, setActiveStatuses] = React.useState<Set<Status>>(() => {
+    const f = filtersFromSearchParams(searchParams);
+    return new Set(f.statuses);
+  });
   const [groupBy, setGroupBy] = React.useState<GroupByMode>(() =>
     groupByFromParams(searchParams),
   );
+  const [sortKey, setSortKey] = React.useState<SortKey>("name");
+  const [sortDir, setSortDir] = React.useState<SortDir>("asc");
+  const [density, setDensity] = React.useState<Density>("comfortable");
+  const [savedViews, setSavedViews] = React.useState<SavedView[]>([]);
+  const [detailResource, setDetailResource] = React.useState<Resource | null>(null);
+  const [detailOpen, setDetailOpen] = React.useState(false);
+  const [gridSignal, setGridSignal] = React.useState<{
+    action: "expand" | "collapse";
+    seq: number;
+  } | null>(null);
   const [commandOpen, setCommandOpen] = React.useState(false);
   const [shortcutsOpen, setShortcutsOpen] = React.useState(false);
   const defaultFilterApplied = React.useRef(false);
@@ -89,11 +124,27 @@ export function Dashboard() {
   } = filters;
 
   React.useEffect(() => {
+    setSavedViews(loadSavedViews());
+    const storedDensity = localStorage.getItem(DENSITY_KEY);
+    if (storedDensity === "compact" || storedDensity === "comfortable") {
+      setDensity(storedDensity);
+    }
+    const sk = localStorage.getItem(SORT_KEY);
+    if (sk === "name" || sk === "status" || sk === "type" || sk === "address") {
+      setSortKey(sk);
+    }
+    const sd = localStorage.getItem(SORT_DIR_KEY);
+    if (sd === "asc" || sd === "desc") setSortDir(sd);
+  }, []);
+
+  React.useEffect(() => {
     if (urlHydrated.current) return;
     const fromUrl = filtersFromSearchParams(searchParams);
-    const hasUrlFilters = filterActiveCount(fromUrl) > 0 || searchParams.get("group");
+    const hasUrlFilters =
+      filterActiveCount(fromUrl) > 0 || searchParams.get("group");
     if (hasUrlFilters) {
-      setFilters(fromUrl);
+      setFilters({ ...fromUrl, statuses: new Set() });
+      setActiveStatuses(new Set(fromUrl.statuses));
       setGroupBy(groupByFromParams(searchParams));
       urlHydrated.current = true;
       defaultFilterApplied.current = true;
@@ -109,13 +160,13 @@ export function Dashboard() {
     setFilters((prev) =>
       mergeFilters(prev, {
         search: parsed.search,
-        statuses: parsed.statuses,
         providers: parsed.providers,
         categories: parsed.categories,
         modules: parsed.modules,
         tags: parsed.tags,
       }),
     );
+    if (parsed.statuses?.size) setActiveStatuses(parsed.statuses);
     defaultFilterApplied.current = true;
   }, [snapshot?.ui?.default_filter]);
 
@@ -130,13 +181,32 @@ export function Dashboard() {
   React.useEffect(() => {
     if (!urlHydrated.current) return;
     const params = filtersToSearchParams(filters, groupBy);
+    if (activeStatuses.size) {
+      params.set("status", [...activeStatuses].join(","));
+    }
     const qs = params.toString();
     router.replace(qs ? `/?${qs}` : "/", { scroll: false });
-  }, [filters, groupBy, router]);
+  }, [filters, groupBy, activeStatuses, router]);
 
   const showCostColumn = snapshot?.ui?.show_cost_column ?? false;
   const pageTitle = snapshot?.ui?.title?.trim() || "Terraview";
   const resources = snapshot?.resources ?? EMPTY_RESOURCES;
+
+  React.useEffect(() => {
+    if (!hasLoaded) return;
+    const hash = window.location.hash.replace(/^#/, "");
+    if (!hash.startsWith("resource=") || resources.length === 0) return;
+    const address = decodeURIComponent(hash.slice("resource=".length));
+    const match = resources.find((r) => r.address === address);
+    if (match) {
+      setDetailResource(match);
+      setDetailOpen(true);
+      document.getElementById(resourceDomId(address))?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }
+  }, [resources, hasLoaded]);
 
   const sidebarFiltered = React.useMemo(
     () =>
@@ -147,18 +217,17 @@ export function Dashboard() {
     [resources, filters],
   );
 
-  const filtered = React.useMemo(
-    () =>
-      filterResources(sidebarFiltered, {
-        search: "",
-        statuses: activeStatuses,
-        providers: new Set(),
-        categories: new Set(),
-        modules: new Set(),
-        tags: new Set(),
-      }),
-    [sidebarFiltered, activeStatuses],
-  );
+  const filtered = React.useMemo(() => {
+    const base = filterResources(sidebarFiltered, {
+      search: "",
+      statuses: activeStatuses,
+      providers: new Set(),
+      categories: new Set(),
+      modules: new Set(),
+      tags: new Set(),
+    });
+    return sortResources(base, sortKey, sortDir);
+  }, [sidebarFiltered, activeStatuses, sortKey, sortDir]);
 
   const facetSummary = React.useMemo(
     () => summariseResources(sidebarFiltered),
@@ -192,6 +261,41 @@ export function Dashboard() {
     setGroupBy(mode);
     localStorage.setItem(GROUP_BY_KEY, mode);
   }, []);
+
+  const openDetails = React.useCallback((resource: Resource) => {
+    setDetailResource(resource);
+    setDetailOpen(true);
+    window.location.hash = `resource=${encodeURIComponent(resource.address)}`;
+  }, []);
+
+  const applyPreset = React.useCallback((presetId: string) => {
+    const preset = QUICK_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+    const patch = preset.apply();
+    if (patch.statuses) setActiveStatuses(patch.statuses);
+    if (patch.search !== undefined) {
+      setFilters((prev) => ({ ...prev, search: patch.search ?? "" }));
+    }
+    toast(`Applied “${preset.label}” filter`);
+  }, [toast]);
+
+  const applySavedView = React.useCallback((view: SavedView) => {
+    const params = new URLSearchParams(view.query);
+    const fromUrl = filtersFromSearchParams(params);
+    setFilters({ ...fromUrl, statuses: new Set() });
+    setActiveStatuses(new Set(fromUrl.statuses));
+    setGroupBy(groupByFromParams(params));
+    toast(`Loaded view “${view.name}”`);
+  }, [toast]);
+
+  const saveCurrentView = React.useCallback(() => {
+    const name = window.prompt("Name this view");
+    if (!name?.trim()) return;
+    const params = filtersToSearchParams(filters, groupBy);
+    if (activeStatuses.size) params.set("status", [...activeStatuses].join(","));
+    setSavedViews(saveView(name.trim(), params.toString()));
+    toast(`Saved view “${name.trim()}”`);
+  }, [filters, groupBy, activeStatuses, toast]);
 
   const focusSearch = React.useCallback(() => {
     document.getElementById("resource-search")?.focus();
@@ -244,8 +348,53 @@ export function Dashboard() {
       onTagToggle={(v) => toggleSet("tags", v)}
       activeCount={activeCount}
       onClear={clearFilters}
+      onApplyPreset={applyPreset}
+      savedViews={savedViews}
+      onApplySavedView={applySavedView}
+      onSaveCurrentView={saveCurrentView}
+      onDeleteSavedView={(id) => setSavedViews(deleteView(id))}
     />
   );
+
+  const filterChips = buildFilterChips({
+    search,
+    statuses: activeStatuses,
+    providers: activeProviders,
+    categories: activeCategories,
+    modules: activeModules,
+    tags: activeTags,
+    onRemoveSearch: () => setSearch(""),
+    onRemoveStatus: (s) =>
+      setActiveStatuses((prev) => {
+        const next = new Set(prev);
+        next.delete(s);
+        return next;
+      }),
+    onRemoveProvider: (p) =>
+      setFilters((prev) => {
+        const next = new Set(prev.providers);
+        next.delete(p);
+        return { ...prev, providers: next };
+      }),
+    onRemoveCategory: (c) =>
+      setFilters((prev) => {
+        const next = new Set(prev.categories);
+        next.delete(c);
+        return { ...prev, categories: next };
+      }),
+    onRemoveModule: (m) =>
+      setFilters((prev) => {
+        const next = new Set(prev.modules);
+        next.delete(m);
+        return { ...prev, modules: next };
+      }),
+    onRemoveTag: (t) =>
+      setFilters((prev) => {
+        const next = new Set(prev.tags);
+        next.delete(t);
+        return { ...prev, tags: next };
+      }),
+  });
 
   return (
     <div className="min-h-svh bg-background">
@@ -254,6 +403,7 @@ export function Dashboard() {
         backendType={snapshot?.backend_type ?? ""}
         generatedAt={snapshot?.generated_at}
         connectionState={connectionState}
+        version={version}
         refreshing={refreshing}
         onRefresh={refresh}
         authRequired={authRequired && !unauthorized}
@@ -297,6 +447,21 @@ export function Dashboard() {
         resources={sidebarFiltered}
         onRefresh={refresh}
         onClearFilters={clearFilters}
+        onViewDetails={openDetails}
+      />
+
+      <ResourceDetailSheet
+        resource={detailResource}
+        open={detailOpen}
+        onOpenChange={(open) => {
+          setDetailOpen(open);
+          if (!open) {
+            setDetailResource(null);
+            if (window.location.hash.startsWith("#resource=")) {
+              history.replaceState(null, "", window.location.pathname + window.location.search);
+            }
+          }
+        }}
       />
 
       <div className="mx-auto flex w-full max-w-7xl gap-6 px-4 py-6">
@@ -318,6 +483,22 @@ export function Dashboard() {
               {error ? (
                 <StaleDataBanner message={error} onRetry={refresh} />
               ) : null}
+              <AttentionBanner
+                summary={facetSummary}
+                onFilterStatus={setActiveStatuses}
+              />
+              <StatusChart
+                summary={facetSummary}
+                activeStatuses={activeStatuses}
+                onStatusToggle={(status) => {
+                  setActiveStatuses((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(status)) next.delete(status);
+                    else next.add(status);
+                    return next;
+                  });
+                }}
+              />
               <SummaryBar
                 summary={facetSummary}
                 activeStatuses={activeStatuses}
@@ -330,21 +511,42 @@ export function Dashboard() {
                   });
                 }}
               />
+              <FilterChips chips={filterChips} onClearAll={clearFilters} />
               <ErrorsBanner errors={snapshot.errors} />
-              <Tabs
-                value={groupBy}
-                onValueChange={(v) => setGroupByMode(v as GroupByMode)}
-              >
-                <TabsList>
-                  <TabsTrigger value="category">By service</TabsTrigger>
-                  <TabsTrigger value="module">By module</TabsTrigger>
-                </TabsList>
-              </Tabs>
+              <ViewToolbar
+                groupBy={groupBy}
+                onGroupByChange={setGroupByMode}
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onSortKeyChange={(k) => {
+                  setSortKey(k);
+                  localStorage.setItem(SORT_KEY, k);
+                }}
+                onSortDirChange={(d) => {
+                  setSortDir(d);
+                  localStorage.setItem(SORT_DIR_KEY, d);
+                }}
+                density={density}
+                onDensityChange={(d) => {
+                  setDensity(d);
+                  localStorage.setItem(DENSITY_KEY, d);
+                }}
+                onExpandAll={() =>
+                  setGridSignal({ action: "expand", seq: Date.now() })
+                }
+                onCollapseAll={() =>
+                  setGridSignal({ action: "collapse", seq: Date.now() })
+                }
+                resourceCount={filtered.length}
+              />
               <ResourceGrid
                 resources={filtered}
                 totalBeforeFilter={sidebarFiltered.length}
                 showCostColumn={showCostColumn}
                 groupBy={groupBy}
+                density={density}
+                onViewDetails={openDetails}
+                gridSignal={gridSignal}
               />
               <footer className="space-y-1 pt-2 text-center text-xs text-muted-foreground">
                 <CopyText

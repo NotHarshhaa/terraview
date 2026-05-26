@@ -27,6 +27,7 @@ interface HeaderProps {
   connectionState: ConnectionState;
   refreshing: boolean;
   onRefresh: () => void;
+  version?: string | null;
   onOpenCommand?: () => void;
   onShowShortcuts?: () => void;
   authRequired?: boolean;
@@ -42,6 +43,7 @@ export function Header({
   connectionState,
   refreshing,
   onRefresh,
+  version,
   onOpenCommand,
   onShowShortcuts,
   authRequired,
@@ -78,6 +80,11 @@ export function Header({
           {relative ? (
             <span className="text-xs text-muted-foreground">
               updated {relative}
+            </span>
+          ) : null}
+          {version ? (
+            <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+              v{version}
             </span>
           ) : null}
         </div>

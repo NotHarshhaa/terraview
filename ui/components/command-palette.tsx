@@ -14,6 +14,7 @@ interface CommandPaletteProps {
   resources: Resource[];
   onRefresh: () => void;
   onClearFilters: () => void;
+  onViewDetails?: (resource: Resource) => void;
 }
 
 export function CommandPalette({
@@ -22,6 +23,7 @@ export function CommandPalette({
   resources,
   onRefresh,
   onClearFilters,
+  onViewDetails,
 }: CommandPaletteProps) {
   const [query, setQuery] = React.useState("");
   const [index, setIndex] = React.useState(0);
@@ -53,6 +55,10 @@ export function CommandPalette({
   const select = React.useCallback(
     (r: Resource) => {
       onOpenChange(false);
+      if (onViewDetails) {
+        onViewDetails(r);
+        return;
+      }
       const el = document.getElementById(resourceDomId(r.address));
       el?.scrollIntoView({ behavior: "smooth", block: "center" });
       el?.classList.add("ring-2", "ring-primary", "ring-offset-2");
@@ -60,7 +66,7 @@ export function CommandPalette({
         el?.classList.remove("ring-2", "ring-primary", "ring-offset-2");
       }, 2000);
     },
-    [onOpenChange],
+    [onOpenChange, onViewDetails],
   );
 
   if (!open) return null;

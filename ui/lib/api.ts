@@ -105,6 +105,10 @@ export async function fetchSnapshot(): Promise<Snapshot> {
   return fetchJSON<Snapshot>("/api/snapshot");
 }
 
+export async function fetchHealth(): Promise<{ version?: string; status?: string }> {
+  return fetchJSON("/api/health");
+}
+
 export async function refreshSnapshot(): Promise<Snapshot> {
   return fetchJSON<Snapshot>("/api/refresh", { method: "POST" });
 }
@@ -142,7 +146,14 @@ export function useSnapshot() {
     connectionState: "connecting",
   });
   const [refreshing, setRefreshing] = React.useState(false);
+  const [version, setVersion] = React.useState<string | null>(null);
   const loadGen = React.useRef(0);
+
+  React.useEffect(() => {
+    void fetchHealth()
+      .then((h) => setVersion(h.version ?? null))
+      .catch(() => setVersion(null));
+  }, []);
 
   const load = React.useCallback(async () => {
     const gen = ++loadGen.current;
@@ -281,5 +292,5 @@ export function useSnapshot() {
     void load();
   }, [load]);
 
-  return { ...state, refresh, refreshing, signIn, signOut, reload: load } as const;
+  return { ...state, refresh, refreshing, signIn, signOut, reload: load, version } as const;
 }

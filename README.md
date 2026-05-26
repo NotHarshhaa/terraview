@@ -9,12 +9,11 @@
    ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝  ╚═══╝  ╚═╝╚══════╝ ╚══╝╚══╝
 ```
 
-**A self-hostable, git-native Web UI for Terraform resource status.**  
-Drop into any repo. No SaaS. No config. Just run and see.
+**A self-hostable, git-native dashboard for Terraform resource status.**  
+Parse HCL + state (+ optional plan), classify every resource, and browse it in a live web UI.
 
-[![Go Version](https://img.shields.io/badge/go-1.22+-00ADD8?style=flat-square&logo=go)](https://golang.org)
+[![Go Version](https://img.shields.io/badge/go-1.25+-00ADD8?style=flat-square&logo=go)](https://golang.org)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](LICENSE)
-[![Status](https://img.shields.io/badge/status-alpha-orange?style=flat-square)]()
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square)](CONTRIBUTING.md)
 
 </div>
@@ -23,25 +22,10 @@ Drop into any repo. No SaaS. No config. Just run and see.
 
 ## What is Terraview?
 
-Most Terraform tooling is either CLI-only or locked behind enterprise SaaS. **Terraview** fills the gap: a lightweight, open-source web dashboard you drop into any Terraform project. It parses your `.tf` files and state backend, then renders every resource in a live status grid — categorized by provider and service type, color-coded by lifecycle status.
+Terraview reads your Terraform project — `.tf` files, state backend, and optionally a JSON plan — then renders a **live status grid** grouped by cloud provider and service type. No SaaS account required: run a single binary locally, in Docker, or behind your CI pipeline.
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  ✅ 47 created   🔄 3 pending   ⚠️ 2 inactive   ❓ 1 drifted  │
-├─────────────────────────────────────────────────────────────────┤
-│  AWS › Compute                                                  │
-│  aws_instance.web_server     ✅ created   t3.medium            │
-│  aws_instance.bastion        ⚠️ stopped   t2.micro             │
-│                                                                 │
-│  AWS › Networking                                               │
-│  aws_vpc.main                ✅ created                        │
-│  aws_subnet.private_a        ✅ created                        │
-│  aws_security_group.alb      🔄 pending create                 │
-│                                                                 │
-│  AWS › Databases                                                │
-│  aws_rds_instance.postgres   ✅ created   db.t3.med            │
-└─────────────────────────────────────────────────────────────────┘
-```
+**Backend:** Go engine + HTTP API + background poller  
+**Frontend:** Next.js dashboard (shadcn / radix-sera preset)
 
 ---
 
@@ -49,335 +33,256 @@ Most Terraform tooling is either CLI-only or locked behind enterprise SaaS. **Te
 
 | Pain | Terraview's answer |
 |---|---|
-| `terraform state list` dumps a flat wall of text | Visual grid, grouped by provider + service category |
-| Existing GUI tools are SaaS or enterprise-only | Self-hosted binary, runs locally or in CI |
-| No way to see pending vs active at a glance | Six distinct lifecycle statuses, color-coded |
-| State drift is invisible until `terraform plan` | Drift detection built into the status engine |
-| Hard to share infra status with non-engineers | Shareable URL, no Terraform CLI knowledge needed |
+| `terraform state list` is a flat text dump | Visual grid grouped by provider › service (or module) |
+| GUI tools are often SaaS or enterprise-only | Self-hosted binary; optional basic auth |
+| Hard to see pending vs applied at a glance | Eight lifecycle statuses with filters and summary chips |
+| Drift only visible after `terraform plan` | Plan JSON `resource_drift` surfaced as **drifted** status |
+| Sharing infra status with non-engineers | Shareable filter URLs; export JSON/CSV |
 
 ---
 
 ## Features
 
-- **Zero-config autodiscovery** — points at any directory and finds `.tf` files automatically
-- **Multi-backend state reading** — local, S3 + DynamoDB, GCS, Azure Blob, Terraform Cloud API
-- **Six resource lifecycle statuses** — created, inactive, pending create, pending destroy, pending update, drifted
-- **Auto-categorization** — groups resources by provider (AWS, GCP, Azure, k8s) then service type (Compute, Network, Database, Storage, IAM, etc.)
-- **Live polling** — re-reads state every 30 seconds, no page refresh needed
-- **Module-aware** — shows which module each resource belongs to
-- **Filter + search** — filter by provider, status, module, tag, or free-text search
-- **Cost estimates** — optional Infracost integration for per-resource cost column
-- **GitHub Actions mode** — outputs a status table as a PR comment
+### Engine & backends
+
+- **Zero-config local mode** — point at a directory; discovers `.tf` files and `terraform.tfstate`
+- **Multi-backend state** — local, S3, GCS, Azure Blob, Terraform Cloud / HCP Terraform
+- **Plan ingestion** — optional `plan_file` (`terraform show -json`) for pending changes and drift
+- **Eight lifecycle statuses** — `created`, `inactive`, `pending_create`, `pending_update`, `pending_destroy`, `drifted`, `unmanaged`, `unknown`
+- **Auto-categorization** — AWS / GCP / Azure / Kubernetes → Compute, Networking, Databases, Storage, IAM, Serverless, …
+- **Module-aware** — shows module path per resource
+- **Live polling** — background refresh (default 30s) + SSE push to the UI
+- **CI mode** — `terraview status` prints JSON or Markdown; exit code `2` when drift is detected
+
+### Dashboard (UI)
+
+- **Filter sidebar** — search, provider, category, module, and tag facets
+- **Quick filters** — Needs attention, Drifted, Pending changes, Healthy, Unmanaged
+- **Saved views** — persist named filter sets in the browser
+- **Shareable URLs** — filters sync to query params (`?status=drifted&provider=AWS`)
+- **Summary bar + status distribution** — clickable status chips and segment bar
+- **Attention banner** — highlights resources that need action
+- **Group by service or module** — toggle grid grouping; preference saved locally
+- **Sort & density** — sort by name, status, type, or address; compact row mode
+- **Collapsible groups** — expand/collapse all resource sections
+- **Resource detail sheet** — full metadata, tags, copy address, Terraform CLI hints
+- **Deep links** — `#resource=aws_instance.web` opens the detail panel
+- **Command palette** — `Ctrl+K` / `⌘K` to jump to any resource
+- **Keyboard shortcuts** — `/` search, `r` refresh, `Esc` clear filters, `?` help
+- **Export** — download filtered resources as JSON or CSV; copy view link
+- **Live connection badge** — Live / Polling / Offline SSE status in the header
+- **Theme toggle** — light, dark, or system
+- **Optional auth UI** — login form when basic auth is enabled
+
+### API
+
+| Endpoint | Description |
+|---|---|
+| `GET /api/health` | Liveness + version |
+| `GET /api/snapshot` | Full snapshot (resources, summary, UI config) |
+| `GET /api/resources` | Filtered resource list (`?status=&provider=&module=&q=`) |
+| `GET /api/summary` | Aggregate counts only |
+| `GET /api/status` | Compact headline for badges / CI |
+| `POST /api/refresh` | Force refresh |
+| `GET /api/events` | SSE stream (`refreshed` events) |
+| `POST /api/login` | Exchange credentials for session token (when auth enabled) |
 
 ---
 
-## Quick Start
+## Quick start
+
+### Prerequisites
+
+- Go **1.25+** (to build from source)
+- Node **20+** (UI development only)
 
 ### Binary
 
 ```bash
-# Install
-go install github.com/NotHarshhaa/terraview@latest
+git clone https://github.com/NotHarshhaa/terraview
+cd terraview
 
-# Run in your Terraform project root
-cd /path/to/your/terraform/project
-terraview serve .
+go run ./cmd/terraview serve ./testdata/sample-project
+# API + UI (if ui/out exists) → http://localhost:7777
+```
 
-# Opens http://localhost:7777
+### Development (API + UI)
+
+Use two terminals — the UI proxies `/api/*` to the Go server via Next.js rewrites (no CORS setup needed):
+
+```bash
+# Terminal 1 — API
+go run ./cmd/terraview serve ./testdata/sample-project --no-ui
+
+# Terminal 2 — UI
+cd ui && npm install && npm run dev
+# → http://localhost:3000
+```
+
+Or use the Makefile:
+
+```bash
+make run          # build + serve sample project on :7777
+make ui-dev       # Next.js on :3000 (requires API on :7777)
+make test         # go test ./...
 ```
 
 ### Docker
 
 ```bash
-docker run -p 7777:7777 \
-  -v $(pwd):/workspace \
-  ghcr.io/notharshhaa/terraview:latest
+docker compose up --build
+# or
+docker run -p 7777:7777 -v "$(pwd):/workspace" ghcr.io/notharshhaa/terraview:latest
 ```
 
-### Docker Compose (add to existing project)
+### CI / PR comments
 
-```yaml
-# docker-compose.yml
-services:
-  terraview:
-    image: ghcr.io/notharshhaa/terraview:latest
-    ports:
-      - "7777:7777"
-    volumes:
-      - .:/workspace
-    environment:
-      - TV_BACKEND=s3                       # local | s3 | gcs | azureblob | tfc
-      - TV_STATE_BUCKET=my-terraform-state  # for S3/GCS
-      - TV_POLL_INTERVAL=30s
+```bash
+terraview status ./infra --format markdown
+terraview status ./infra --plan-file ./plan.json   # includes pending + drift
+# Exit 2 if any resource is drifted
 ```
 
-### GitHub Actions (PR status comment)
-
-```yaml
-# .github/workflows/terraview.yml
-name: Terraform Status
-on: [pull_request]
-
-jobs:
-  status:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: NotHarshhaa/terraview-action@v1
-        with:
-          working-directory: ./infra
-          backend: s3
-          state-bucket: ${{ secrets.TF_STATE_BUCKET }}
-          aws-region: us-east-1
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-```
-
-This posts a status table directly on the PR:
-
-```
-## 🔭 Terraview — Infrastructure Status
-
-| Resource | Type | Module | Status | Last Changed |
-|---|---|---|---|---|
-| web_server | aws_instance | //compute | ✅ created | 2d ago |
-| alb_sg | aws_security_group | //networking | 🔄 pending create | — |
-| postgres | aws_rds_instance | //databases | ✅ created | 5d ago |
-```
+Example GitHub Actions workflow — see [`.terraview.yaml.example`](.terraview.yaml.example) and wire `terraview status` or a future action.
 
 ---
 
-## Architecture
+## Status classification
+
+Each resource is classified from HCL declarations, state, and plan:
 
 ```
-Your Terraform Repo
-├── main.tf  vpc.tf  rds.tf  modules/
-└── .terraview/          ← Terraview lives here
-
-          │  reads .tf files + state
-          ▼
-
-┌──────────────────────────────────────┐
-│          TERRAVIEW ENGINE (Go)        │
-│                                      │
-│  HCL Parser  │  State Parser  │  Plan Parser   │
-│              ↓                ↓                 │
-│       Status Classifier  +  Category Engine    │
-│              ↓                                  │
-│  Backend Adapters:                             │
-│  Local │ S3+DynamoDB │ GCS │ AzureBlob │ TFC  │
-└──────────────────────────────────────┘
-          │  JSON resource graph
-          ▼
-
-┌──────────────────────────────────────┐
-│       TERRAVIEW WEB UI (Next.js)      │
-│  port 7777                           │
-│                                      │
-│  Summary Bar  │  Filter Sidebar  │  Live Polling  │
-│                                      │
-│  Resource Status Grid                │
-│  Provider → Category → Resource rows │
-└──────────────────────────────────────┘
+In state?
+├── NO  → in plan as create?  → pending_create
+│         declared in .tf?    → unmanaged
+│         else                → unknown
+└── YES → in plan?
+│         ├── delete          → pending_destroy
+│         ├── update/replace  → pending_update
+│         └── create          → pending_create
+          drift in plan?        → drifted
+          provider inactive?    → inactive
+          else                  → created
 ```
 
-### Status Classification Logic
-
-Each resource goes through this decision tree:
-
-```
-Is the resource in the state file?
-├── NO  → Is it in the plan with action=create?
-│          ├── YES → 🔄 Pending Create
-│          └── NO  → ⬜ Not Managed
-│
-└── YES → Does state match actual provider attributes?
-           ├── NO  → ❓ Drifted
-           └── YES → What is the provider-reported status?
-                      ├── running/available/active → ✅ Created & Active
-                      ├── stopped/disabled/paused  → ⚠️ Inactive
-                      └── Is it in plan with action=delete? → 🗑 Pending Destroy
-                          Is it in plan with action=update? → 🔀 Pending Update
-```
-
-### Category Engine Mapping
-
-```
-aws_instance, aws_autoscaling_*       → AWS › Compute
-aws_vpc, aws_subnet, aws_route_*      → AWS › Networking
-aws_security_group, aws_nacl          → AWS › Networking
-aws_rds_*, aws_dynamodb_*             → AWS › Databases
-aws_elasticache_*                     → AWS › Databases
-aws_s3_bucket, aws_efs_*              → AWS › Storage
-aws_iam_*, aws_kms_*                  → AWS › Security & IAM
-aws_lambda_*, aws_sqs_*, aws_sns_*    → AWS › Serverless
-aws_eks_*, aws_ecs_*                  → AWS › Containers
-aws_alb, aws_lb, aws_cloudfront_*     → AWS › Load Balancing & CDN
-
-google_compute_*                      → GCP › Compute
-google_sql_*, google_bigtable_*       → GCP › Databases
-google_storage_*                      → GCP › Storage
-google_container_*                    → GCP › Kubernetes
-
-azurerm_virtual_machine_*             → Azure › Compute
-azurerm_sql_*, azurerm_cosmosdb_*     → Azure › Databases
-azurerm_storage_*                     → Azure › Storage
-azurerm_virtual_network_*             → Azure › Networking
-
-kubernetes_deployment, kubernetes_pod → Kubernetes › Workloads
-kubernetes_service, kubernetes_ingress → Kubernetes › Networking
-kubernetes_persistent_volume_*        → Kubernetes › Storage
-```
+**Drift detection** reads the `resource_drift` section from a Terraform plan JSON file. Pass it via `plan_file` in config or `--plan-file` on the CLI.
 
 ---
 
 ## Configuration
 
-Terraview uses zero config by default. Optional configuration via `.terraview.yaml` in your project root or environment variables:
+Copy [`.terraview.yaml.example`](.terraview.yaml.example) to your project root. All fields are optional.
 
 ```yaml
-# .terraview.yaml
 port: 7777
 poll_interval: 30s
 working_dir: .
+plan_file: ./plan.json          # optional: terraform show -json output
 
 backend:
-  type: s3                          # local | s3 | gcs | azureblob | tfc
-  bucket: my-terraform-state        # S3/GCS bucket name
-  key: terraform/project/terraform.tfstate
-  region: us-east-1
-  dynamodb_table: terraform-locks   # optional
+  type: local                   # local | s3 | gcs | azureblob | tfc
+  # S3: bucket, key, region, dynamodb_table, endpoint
+  # GCS: bucket, key
+  # Azure: storage_account, container, key
+  # TFC: organization, workspace, token, hostname
 
 ui:
   title: "My Project — Infrastructure"
-  show_cost_column: true            # requires INFRACOST_API_KEY
+  show_cost_column: false       # reserved for future Infracost integration
   default_filter: status=created
 
 auth:
-  enabled: false                    # optional basic auth
+  enabled: false
   username: admin
   password_env: TV_PASSWORD
+  access_token: secret-token    # Bearer / ?access_token= for SSE
 ```
 
-| Env Var | Default | Description |
+### Environment variables
+
+| Variable | Default | Description |
 |---|---|---|
-| `TV_PORT` | `7777` | Web UI port |
-| `TV_BACKEND` | `local` | State backend type |
-| `TV_STATE_BUCKET` | — | S3/GCS bucket name |
-| `TV_POLL_INTERVAL` | `30s` | State refresh interval |
-| `TV_WORKING_DIR` | `.` | Path to Terraform root |
-| `INFRACOST_API_KEY` | — | Enables cost column |
+| `TV_PORT` | `7777` | HTTP port |
+| `TV_POLL_INTERVAL` | `30s` | Snapshot refresh interval (min 5s) |
+| `TV_WORKING_DIR` | `.` | Terraform project root |
+| `TV_BACKEND` | `local` | Backend type |
+| `TV_STATE_BUCKET` | — | S3/GCS bucket |
+| `TV_STATE_KEY` | — | State object key |
+| `TV_STATE_REGION` | — | AWS region (S3) |
+| `TV_STATE_FILE` | — | Explicit local state path |
+| `TV_PLAN_FILE` | — | Plan JSON path |
+| `TV_UI_TITLE` | `Terraview` | Dashboard title |
+| `TV_PASSWORD` | — | Basic auth password |
+| `TV_ACCESS_TOKEN` | — | Static API token (SSE-friendly) |
+| `TFE_TOKEN` | — | Terraform Cloud token |
+
+### Auth
+
+When `auth.enabled: true`, the API accepts:
+
+- HTTP **Basic** auth (`username` / `password`)
+- **Bearer** token header (`access_token` or session token from login)
+- **`?access_token=`** query param (required for browser EventSource / SSE)
+- **Session cookie** from `POST /api/login`
+
+The UI stores credentials in `sessionStorage` and shows a login form on `401`.
 
 ---
 
-## Supported Backends
+## Supported backends
 
 | Backend | Status | Notes |
 |---|---|---|
-| Local (`terraform.tfstate`) | ✅ Supported | Default, no config needed |
-| S3 + DynamoDB | ✅ Supported | Uses standard AWS SDK credential chain |
-| GCS | ✅ Supported | Uses ADC or `GOOGLE_APPLICATION_CREDENTIALS` |
-| Azure Blob Storage | 🚧 In progress | |
-| Terraform Cloud / HCP | 🚧 In progress | Needs `TFE_TOKEN` |
-| Consul | 📋 Planned | |
-| Postgres | 📋 Planned | |
+| Local (`terraform.tfstate`) | Supported | Default; also checks `.terraform/terraform.tfstate` |
+| Amazon S3 | Supported | AWS SDK v2; optional S3-compatible `endpoint` |
+| Google Cloud Storage | Supported | Application Default Credentials |
+| Azure Blob Storage | Supported | `DefaultAzureCredential` |
+| Terraform Cloud / HCP | Supported | HTTP API; set `TFE_TOKEN` or `backend.token` |
 
 ---
 
-## Roadmap
-
-- [ ] `v0.1` — Core engine + local backend + basic status grid
-- [ ] `v0.2` — S3 + GCS backend adapters
-- [ ] `v0.3` — Drift detection via provider attribute comparison
-- [ ] `v0.4` — GitHub Actions mode + PR comments
-- [ ] `v0.5` — Infracost integration (cost column)
-- [ ] `v0.6` — Terraform Cloud backend + multi-workspace support
-- [ ] `v1.0` — Stable API, Helm chart for in-cluster deployment
-- [ ] `v1.x` — RBAC, SSO, team sharing features
-
----
-
-## Project Structure
+## Project layout
 
 ```
 terraview/
-├── cmd/
-│   └── terraview/
-│       └── main.go              # CLI entrypoint (serve, version)
-│
+├── cmd/terraview/          CLI (serve, status, version)
 ├── internal/
-│   ├── engine/
-│   │   ├── hcl_parser.go        # Reads .tf files into resource AST
-│   │   ├── state_parser.go      # Parses terraform show -json output
-│   │   ├── plan_parser.go       # Parses terraform plan -json output
-│   │   ├── classifier.go        # Status classification logic
-│   │   └── categorizer.go       # resource_type → provider/service mapping
-│   │
-│   ├── backend/
-│   │   ├── backend.go           # Backend interface
-│   │   ├── local.go             # Local tfstate reader
-│   │   ├── s3.go                # S3 + DynamoDB reader
-│   │   ├── gcs.go               # GCS reader
-│   │   └── tfc.go               # Terraform Cloud API client
-│   │
-│   ├── api/
-│   │   ├── server.go            # HTTP server + routes
-│   │   ├── handlers.go          # /api/resources, /api/summary, /api/status
-│   │   └── poller.go            # Background state refresh goroutine
-│   │
-│   └── models/
-│       └── resource.go          # Resource, Status, Category types
-│
-├── ui/                          # Next.js frontend
-│   ├── app/
-│   │   └── page.tsx             # Main dashboard
-│   ├── components/
-│   │   ├── ResourceGrid.tsx     # Main status table
-│   │   ├── SummaryBar.tsx       # Status counts header
-│   │   ├── FilterSidebar.tsx    # Provider / module / tag filters
-│   │   └── StatusBadge.tsx      # Color-coded status pills
-│   └── lib/
-│       └── api.ts               # SWR hooks for /api/* endpoints
-│
+│   ├── api/                HTTP server, SSE, auth, handlers
+│   ├── backend/            State adapters (local, s3, gcs, azure, tfc)
+│   ├── config/             .terraview.yaml loader
+│   ├── engine/             HCL/state/plan parsers, classifier
+│   └── models/             Shared API types
+├── ui/                     Next.js dashboard
+├── testdata/sample-project/ Demo Terraform project
 ├── Dockerfile
 ├── docker-compose.yml
-├── .terraview.yaml.example
-└── README.md
+└── Makefile
 ```
 
 ---
 
 ## Contributing
 
-Contributions are welcome. This is an early-stage project and the core engine is the most impactful area to contribute to.
+See [CONTRIBUTING.md](CONTRIBUTING.md). High-impact areas:
 
-**High-value contribution areas:**
-- Backend adapters (Azure Blob, Consul, Postgres)
-- Provider category mappings (GCP, Azure, k8s resources)
-- Drift detection improvement (attribute-level comparison)
-- UI improvements (resource detail drawer, graph view)
+- Provider category mappings (new resource types)
+- Plan / drift edge cases
+- Remote backend hardening (locks, retries)
+- Infracost cost column integration
 
 ```bash
-# Development setup
 git clone https://github.com/NotHarshhaa/terraview
 cd terraview
 
-# Run backend
-go run ./cmd/terraview serve ./testdata/sample-project
-
-# Run frontend (separate terminal)
-cd ui && npm install && npm run dev
-
-# Run tests
 go test ./...
+go vet ./...
+
+cd ui && npm run typecheck && npm run build
 ```
 
 ---
 
-## Related Projects
-
-Built by the same author — part of the open-source DevOps tooling ecosystem:
+## Related projects
 
 - [`devops-project-generator`](https://github.com/NotHarshhaa/devops-project-generator) — scaffold DevOps project structures
 - [`terraform-cost-estimator`](https://github.com/NotHarshhaa/terraform-cost-estimator) — cost estimation for Terraform plans
@@ -392,5 +297,5 @@ Apache 2.0 — see [LICENSE](LICENSE)
 ---
 
 <div align="center">
-Built by <a href="https://github.com/NotHarshhaa">@NotHarshhaa</a> · Always Building
+Built by <a href="https://github.com/NotHarshhaa">@NotHarshhaa</a>
 </div>

@@ -10,20 +10,29 @@
 
 import * as React from "react";
 
-import { IconChevronRight } from "@tabler/icons-react";
+import { IconChevronRight, IconInfoCircle } from "@tabler/icons-react";
 
-import { CopyText } from "@/components/copy-button";
+import { CopyButton, CopyText } from "@/components/copy-button";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { resourceDomId } from "@/lib/filters";
 import { type Resource } from "@/lib/types";
+import type { Density } from "@/lib/views";
 import { StatusBadge } from "./status-badge";
 
 interface ResourceRowProps {
   resource: Resource;
   showCostColumn?: boolean;
+  density?: Density;
+  onViewDetails?: (resource: Resource) => void;
 }
 
-export function ResourceRow({ resource, showCostColumn = false }: ResourceRowProps) {
+export function ResourceRow({
+  resource,
+  showCostColumn = false,
+  density = "comfortable",
+  onViewDetails,
+}: ResourceRowProps) {
   const [open, setOpen] = React.useState(false);
 
   const subtitle = [resource.type, resource.module || null]
@@ -40,8 +49,12 @@ export function ResourceRow({ resource, showCostColumn = false }: ResourceRowPro
     (resource.tags && Object.keys(resource.tags).length > 0) ||
     hasLastChanged;
 
-  const rowClassName = "flex w-full items-center gap-3 px-3 py-2 text-left";
-  const rowBody = (
+  const rowClassName = cn(
+    "flex w-full items-center gap-3 px-3 text-left",
+    density === "compact" ? "py-1.5" : "py-2",
+  );
+
+  const mainContent = (
     <>
       <IconChevronRight
         className={cn(
@@ -69,7 +82,6 @@ export function ResourceRow({ resource, showCostColumn = false }: ResourceRowPro
           ${resource.monthly_cost.toFixed(2)}/mo
         </span>
       ) : null}
-      <StatusBadge status={resource.status} />
     </>
   );
 
@@ -81,18 +93,34 @@ export function ResourceRow({ resource, showCostColumn = false }: ResourceRowPro
         open ? "bg-muted/40" : "hover:bg-muted/30",
       )}
     >
-      {hasDetails ? (
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className={rowClassName}
-          aria-expanded={open}
-        >
-          {rowBody}
-        </button>
-      ) : (
-        <div className={rowClassName}>{rowBody}</div>
-      )}
+      <div className={rowClassName}>
+        {hasDetails ? (
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            onDoubleClick={() => onViewDetails?.(resource)}
+            className="flex min-w-0 flex-1 items-center gap-3 text-left"
+            aria-expanded={open}
+          >
+            {mainContent}
+          </button>
+        ) : (
+          <div className="flex min-w-0 flex-1 items-center gap-3">{mainContent}</div>
+        )}
+        {onViewDetails ? (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="shrink-0 opacity-0 group-hover:opacity-100"
+            onClick={() => onViewDetails(resource)}
+            aria-label="View details"
+            title="View details"
+          >
+            <IconInfoCircle className="size-3.5" />
+          </Button>
+        ) : null}
+        <StatusBadge status={resource.status} className="shrink-0" />
+      </div>
 
       {open && hasDetails ? (
         <div className="space-y-3 border-t bg-background/40 px-9 py-3 text-xs">

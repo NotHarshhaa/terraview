@@ -1,8 +1,3 @@
-/**
- * FilterSidebar — provider, category and module filters using shadcn sidebar
- * primitives from the radix-sera preset (menuColor / menuAccent).
- */
-
 "use client";
 
 import * as React from "react";
@@ -13,6 +8,8 @@ import {
   IconCubeUnfolded,
   IconCategory,
   IconTag,
+  IconBookmark,
+  IconBolt,
 } from "@tabler/icons-react";
 
 import { Button } from "@/components/ui/button";
@@ -32,6 +29,8 @@ import {
   SidebarProvider,
   SidebarSeparator,
 } from "@/components/ui/sidebar";
+import { QUICK_PRESETS } from "@/lib/views";
+import type { SavedView } from "@/lib/saved-views";
 
 export interface Facet {
   value: string;
@@ -61,6 +60,12 @@ interface FilterSidebarProps {
 
   onClear: () => void;
   activeCount: number;
+
+  onApplyPreset: (presetId: string) => void;
+  savedViews: SavedView[];
+  onApplySavedView: (view: SavedView) => void;
+  onSaveCurrentView: () => void;
+  onDeleteSavedView: (id: string) => void;
 }
 
 export function FilterSidebar(props: FilterSidebarProps) {
@@ -93,6 +98,73 @@ export function FilterSidebar(props: FilterSidebarProps) {
         </SidebarHeader>
 
         <SidebarContent>
+          <SidebarGroup>
+            <SidebarGroupLabel>
+              <IconBolt aria-hidden />
+              Quick filters
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <div className="flex flex-wrap gap-1 px-2 pb-1">
+                {QUICK_PRESETS.map((preset) => (
+                  <Button
+                    key={preset.id}
+                    variant="outline"
+                    size="xs"
+                    className="h-7"
+                    title={preset.description}
+                    onClick={() => props.onApplyPreset(preset.id)}
+                  >
+                    {preset.label}
+                  </Button>
+                ))}
+              </div>
+            </SidebarGroupContent>
+          </SidebarGroup>
+
+          <SidebarSeparator />
+
+          <SidebarGroup>
+            <SidebarGroupLabel className="justify-between">
+              <span className="inline-flex items-center gap-1">
+                <IconBookmark aria-hidden />
+                Saved views
+              </span>
+              <Button variant="link" size="xs" onClick={props.onSaveCurrentView}>
+                Save
+              </Button>
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              {props.savedViews.length === 0 ? (
+                <p className="px-3 text-xs text-muted-foreground">
+                  Save the current filters for quick access.
+                </p>
+              ) : (
+                <SidebarMenu>
+                  {props.savedViews.map((view) => (
+                    <SidebarMenuItem key={view.id} className="group/view">
+                      <SidebarMenuButton onClick={() => props.onApplySavedView(view)}>
+                        <span className="truncate pr-6">{view.name}</span>
+                      </SidebarMenuButton>
+                      <button
+                        type="button"
+                        className="absolute top-1/2 right-2 -translate-y-1/2 rounded px-1 text-xs text-muted-foreground opacity-0 hover:text-foreground group-hover/view:opacity-100"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          props.onDeleteSavedView(view.id);
+                        }}
+                        aria-label={`Delete ${view.name}`}
+                      >
+                        ×
+                      </button>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              )}
+            </SidebarGroupContent>
+          </SidebarGroup>
+
+          <SidebarSeparator />
+
           <FacetGroup
             icon={<IconCubeUnfolded aria-hidden />}
             label="Providers"
@@ -171,7 +243,7 @@ function FacetGroup({
                   onClick={() => onToggle(f.value)}
                   aria-pressed={active.has(f.value)}
                 >
-                  <span>{f.label}</span>
+                  <span className="truncate">{f.label}</span>
                   <SidebarMenuBadge>{f.count}</SidebarMenuBadge>
                 </SidebarMenuButton>
               </SidebarMenuItem>

@@ -1,17 +1,11 @@
 /**
- * SummaryBar — the row of status totals at the top of the dashboard.
- *
- * Renders only statuses that have at least one resource so the bar doesn't
- * look noisy in a freshly-applied project (where everything is "created").
- * Clicking a chip narrows the resource grid to that status — the filter
- * state is owned higher up and passed in as `onStatusToggle`.
+ * SummaryBar — status totals with preset button chips.
  */
 
 "use client";
 
-import * as React from "react";
-
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import { STATUS_META, STATUS_ORDER, type Status, type Summary } from "@/lib/types";
 
 interface SummaryBarProps {
@@ -32,47 +26,42 @@ export function SummaryBar({
 
   if (items.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed bg-card/40 p-6 text-center text-sm text-muted-foreground">
-        No managed resources yet. Run <code>terraform apply</code> and refresh.
-      </div>
+      <p className="border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">
+        No managed resources yet. Run <code className="font-mono">terraform apply</code> and
+        refresh.
+      </p>
     );
   }
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="text-xs uppercase tracking-wider text-muted-foreground">
+      <span className="text-xs font-semibold tracking-widest text-muted-foreground uppercase">
         {summary.total} {summary.total === 1 ? "resource" : "resources"}
       </span>
-      <div className="h-4 w-px bg-border" aria-hidden />
+      <Separator orientation="vertical" className="h-4" />
       {items.map(({ status, count }) => {
         const meta = STATUS_META[status];
         const active = activeStatuses.has(status);
         return (
-          <button
+          <Button
             key={status}
             type="button"
+            variant={active ? "secondary" : "outline"}
+            size="xs"
             onClick={() => onStatusToggle(status)}
-            className={cn(
-              "group inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-xs ring-1 ring-inset transition",
-              meta.pill,
-              active
-                ? "shadow-sm ring-2"
-                : "opacity-80 hover:opacity-100 hover:shadow-sm"
-            )}
             aria-pressed={active}
             aria-label={`Filter by ${meta.label}, ${count} resources`}
             title={meta.description}
           >
-            <span className={cn("size-1.5 rounded-full", meta.dot)} aria-hidden />
-            <span className="font-medium">{count}</span>
-            <span>{meta.label}</span>
-          </button>
+            <span className="tabular-nums">{count}</span>
+            {meta.label}
+          </Button>
         );
       })}
       {summary.total_monthly_cost ? (
         <>
-          <div className="h-4 w-px bg-border" aria-hidden />
-          <span className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+          <Separator orientation="vertical" className="h-4" />
+          <span className="text-xs text-muted-foreground">
             ~${summary.total_monthly_cost.toFixed(2)}/mo
           </span>
         </>
