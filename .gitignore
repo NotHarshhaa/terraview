@@ -1,0 +1,21 @@
+# Built binaries
+/terraview
+/terraview.exe
+/bin/
+/dist/
+
+# Terraform artefacts in the testdata project
+testdata/**/.terraform/
+testdata/**/terraform.tfstate.backup
+
+# UI build outputs (state is small; keep package-lock.json under version control)
+ui/node_modules/
+ui/.next/
+ui/out/
+ui/.turbo/
+
+# OS / editor noise
+.DS_Store
+.vscode/
+.idea/
+*.swp

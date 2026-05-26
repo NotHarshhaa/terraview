@@ -1,0 +1,42 @@
+# Drop this file into your Terraform project alongside `main.tf`.
+#
+#   docker compose up
+#
+# then open http://localhost:7777.
+
+services:
+  terraview:
+    image: ghcr.io/notharshhaa/terraview:latest
+    # Uncomment to build from source instead of pulling the published image.
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+    container_name: terraview
+    ports:
+      - "7777:7777"
+    volumes:
+      # Mount your Terraform project so Terraview can read .tf files and
+      # any local terraform.tfstate.
+      - .:/workspace:ro
+    environment:
+      TV_BACKEND: local                # local | s3 | gcs | azureblob | tfc
+      TV_WORKING_DIR: /workspace
+      TV_POLL_INTERVAL: 30s
+      # --- S3 backend (uncomment + supply creds via env or shared file) ---
+      # TV_BACKEND: s3
+      # TV_STATE_BUCKET: my-terraform-state
+      # TV_STATE_KEY: project/terraform.tfstate
+      # TV_STATE_REGION: us-east-1
+      # AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      # AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      # --- Terraform Cloud ---
+      # TV_BACKEND: tfc
+      # TFE_TOKEN: ${TFE_TOKEN}
+      # --- Optional: Infracost cost column ---
+      # INFRACOST_API_KEY: ${INFRACOST_API_KEY}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:7777/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

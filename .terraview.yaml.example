@@ -1,0 +1,58 @@
+# .terraview.yaml — drop this file at the root of your Terraform project to
+# customise the Terraview dashboard. Every field is optional; sensible
+# defaults are applied when a field is omitted.
+
+# HTTP port the dashboard listens on.
+port: 7777
+
+# How often the background poller refreshes the snapshot from the state
+# backend. Minimum 5s. Override with TV_POLL_INTERVAL.
+poll_interval: 30s
+
+# Path to the Terraform project root (where the .tf files live). Defaults to
+# the directory `terraview serve` was invoked from.
+working_dir: .
+
+# Optional: path to a `terraform show -json plan.tfplan` document. When set,
+# Terraview will show what's pending in addition to what's already applied.
+# plan_file: ./terraview.plan.json
+
+backend:
+  # Backend type: local | s3 | gcs | azureblob | tfc
+  type: local
+
+  # --- local --------------------------------------------------------------
+  # state_file: ./terraform.tfstate     # explicit path; otherwise <working_dir>/terraform.tfstate
+
+  # --- s3 -----------------------------------------------------------------
+  # bucket: my-terraform-state
+  # key: terraform/project/terraform.tfstate
+  # region: us-east-1
+  # dynamodb_table: terraform-locks      # optional lock-table hint
+  # endpoint:                            # optional S3-compatible endpoint
+
+  # --- gcs ----------------------------------------------------------------
+  # bucket: my-tf-state
+  # key: project/default.tfstate
+
+  # --- azureblob ----------------------------------------------------------
+  # storage_account: mystateacct
+  # container: tfstate
+  # key: project.tfstate
+
+  # --- tfc (Terraform Cloud / HCP Terraform) ------------------------------
+  # organization: my-org
+  # workspace: my-workspace
+  # token:           # leave empty to read from TFE_TOKEN env
+  # hostname:        # defaults to app.terraform.io
+
+ui:
+  title: "Terraview — Infrastructure"
+  show_cost_column: false            # requires INFRACOST_API_KEY at runtime
+  default_filter: ""                 # e.g. "status=created"
+
+auth:
+  enabled: false                     # set true to enforce basic auth
+  username: admin
+  # password: literal-password       # prefer password_env in version control
+  password_env: TV_PASSWORD

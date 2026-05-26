@@ -1,0 +1,23 @@
+# Don't bloat the build context with build artefacts, IDE files or test data.
+.git
+.github
+.terraform
+.terraview
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.log
+
+# UI build outputs
+ui/node_modules
+ui/.next
+ui/out
+
+# Go build cache
+bin
+dist
+
+# Editor noise
+.vscode
+.idea
+*.swp
