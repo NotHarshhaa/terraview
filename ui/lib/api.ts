@@ -119,6 +119,8 @@ export async function login(
   });
 }
 
+export type ConnectionState = "connecting" | "live" | "polling" | "offline";
+
 interface SnapshotState {
   snapshot: Snapshot | null;
   loading: boolean;
@@ -126,6 +128,7 @@ interface SnapshotState {
   hasLoaded: boolean;
   authRequired: boolean;
   unauthorized: boolean;
+  connectionState: ConnectionState;
 }
 
 export function useSnapshot() {
@@ -136,6 +139,7 @@ export function useSnapshot() {
     hasLoaded: false,
     authRequired: false,
     unauthorized: false,
+    connectionState: "connecting",
   });
   const [refreshing, setRefreshing] = React.useState(false);
   const loadGen = React.useRef(0);
@@ -145,14 +149,15 @@ export function useSnapshot() {
     try {
       const snap = await fetchSnapshot();
       if (gen !== loadGen.current) return;
-      setState({
+      setState((prev) => ({
         snapshot: snap,
         loading: false,
         error: null,
         hasLoaded: true,
         authRequired: snap.ui?.auth_required ?? false,
         unauthorized: false,
-      });
+        connectionState: prev.connectionState,
+      }));
     } catch (err) {
       if (gen !== loadGen.current) return;
       const message = err instanceof Error ? err.message : String(err);
@@ -164,6 +169,7 @@ export function useSnapshot() {
         hasLoaded: prev.hasLoaded,
         authRequired: unauthorized || prev.authRequired,
         unauthorized,
+        connectionState: prev.snapshot ? prev.connectionState : "offline",
       }));
     }
   }, []);
@@ -189,16 +195,24 @@ export function useSnapshot() {
       consecutiveErrors = 0;
     };
 
+    setState((prev) => ({ ...prev, connectionState: "connecting" }));
+
     src.addEventListener("refreshed", () => {
       void load();
     });
     src.onopen = () => {
       stopPolling();
+      setState((prev) => ({ ...prev, connectionState: "live" }));
     };
     src.onerror = () => {
       consecutiveErrors++;
       if (consecutiveErrors >= 3 && !pollFallback) {
         pollFallback = setInterval(() => void load(), 30_000);
+        setState((prev) => ({ ...prev, connectionState: "polling" }));
+      } else if (consecutiveErrors === 1) {
+        setState((prev) =>
+          prev.connectionState === "live" ? { ...prev, connectionState: "connecting" } : prev,
+        );
       }
     };
 
@@ -214,14 +228,15 @@ export function useSnapshot() {
     try {
       const snap = await refreshSnapshot();
       if (gen !== loadGen.current) return;
-      setState({
+      setState((prev) => ({
         snapshot: snap,
         loading: false,
         error: null,
         hasLoaded: true,
         authRequired: snap.ui?.auth_required ?? false,
         unauthorized: false,
-      });
+        connectionState: prev.connectionState,
+      }));
     } catch (err) {
       if (gen !== loadGen.current) return;
       const message = err instanceof Error ? err.message : String(err);
@@ -252,5 +267,19 @@ export function useSnapshot() {
     [load],
   );
 
-  return { ...state, refresh, refreshing, signIn, reload: load } as const;
+  const signOut = React.useCallback(() => {
+    setStoredAuth(null);
+    setState({
+      snapshot: null,
+      loading: true,
+      error: null,
+      hasLoaded: false,
+      authRequired: true,
+      unauthorized: true,
+      connectionState: "connecting",
+    });
+    void load();
+  }, [load]);
+
+  return { ...state, refresh, refreshing, signIn, signOut, reload: load } as const;
 }

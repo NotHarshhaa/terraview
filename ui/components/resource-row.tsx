@@ -12,7 +12,9 @@ import * as React from "react";
 
 import { IconChevronRight } from "@tabler/icons-react";
 
+import { CopyText } from "@/components/copy-button";
 import { cn } from "@/lib/utils";
+import { resourceDomId } from "@/lib/filters";
 import { type Resource } from "@/lib/types";
 import { StatusBadge } from "./status-badge";
 
@@ -73,8 +75,9 @@ export function ResourceRow({ resource, showCostColumn = false }: ResourceRowPro
 
   return (
     <div
+      id={resourceDomId(resource.address)}
       className={cn(
-        "group rounded-md border border-transparent",
+        "group scroll-mt-24 rounded-md border border-transparent transition-shadow",
         open ? "bg-muted/40" : "hover:bg-muted/30",
       )}
     >
@@ -93,9 +96,7 @@ export function ResourceRow({ resource, showCostColumn = false }: ResourceRowPro
 
       {open && hasDetails ? (
         <div className="space-y-3 border-t bg-background/40 px-9 py-3 text-xs">
-          <div>
-            <span className="font-mono text-muted-foreground/80">{resource.address}</span>
-          </div>
+          <CopyText value={resource.address} mono className="text-muted-foreground/80" />
           {resource.status_reason ? (
             <KV k="Why" v={resource.status_reason} />
           ) : null}

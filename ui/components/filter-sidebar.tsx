@@ -12,6 +12,7 @@ import {
   IconFolderOpen,
   IconCubeUnfolded,
   IconCategory,
+  IconTag,
 } from "@tabler/icons-react";
 
 import { Button } from "@/components/ui/button";
@@ -54,6 +55,10 @@ interface FilterSidebarProps {
   activeModules: Set<string>;
   onModuleToggle: (value: string) => void;
 
+  tags: Facet[];
+  activeTags: Set<string>;
+  onTagToggle: (value: string) => void;
+
   onClear: () => void;
   activeCount: number;
 }
@@ -72,7 +77,7 @@ export function FilterSidebar(props: FilterSidebarProps) {
               id="resource-search"
               value={props.search}
               onChange={(e) => props.onSearchChange(e.target.value)}
-              placeholder="Search address, type, tag…"
+              placeholder="Search address, type, tag… (/)"
               className="pl-8"
               aria-label="Search resources"
             />
@@ -112,6 +117,19 @@ export function FilterSidebar(props: FilterSidebarProps) {
             onToggle={props.onModuleToggle}
             emptyLabel="No modules"
           />
+          {props.tags.length > 0 ? (
+            <>
+              <SidebarSeparator />
+              <FacetGroup
+                icon={<IconTag aria-hidden />}
+                label="Tags"
+                facets={props.tags}
+                active={props.activeTags}
+                onToggle={props.onTagToggle}
+                emptyLabel="No tags"
+              />
+            </>
+          ) : null}
         </SidebarContent>
       </Sidebar>
     </SidebarProvider>

@@ -16,9 +16,11 @@ import {
   IconBrandAzure,
   IconShip,
   IconCloud,
+  IconFolderOpen,
 } from "@tabler/icons-react";
 
 import { Card, CardContent } from "@/components/ui/card";
+import { type GroupByMode } from "@/lib/filters";
 import { type Resource } from "@/lib/types";
 import { ResourceRow } from "./resource-row";
 
@@ -26,20 +28,34 @@ interface ResourceGridProps {
   resources: Resource[];
   totalBeforeFilter: number;
   showCostColumn?: boolean;
+  groupBy?: GroupByMode;
 }
 
-interface Group {
+interface CategoryGroup {
+  kind: "category";
   provider: string;
   service: string;
   resources: Resource[];
 }
 
+interface ModuleGroup {
+  kind: "module";
+  module: string;
+  resources: Resource[];
+}
+
+type Group = CategoryGroup | ModuleGroup;
+
 export function ResourceGrid({
   resources,
   totalBeforeFilter,
   showCostColumn = false,
+  groupBy = "category",
 }: ResourceGridProps) {
-  const groups = React.useMemo(() => groupByCategory(resources), [resources]);
+  const groups = React.useMemo(
+    () => (groupBy === "module" ? groupByModule(resources) : groupByCategory(resources)),
+    [resources, groupBy],
+  );
 
   if (resources.length === 0) {
     return (
@@ -60,15 +76,28 @@ export function ResourceGrid({
     <div className="space-y-4">
       {groups.map((group) => (
         <Card
-          key={`${group.provider}-${group.service}`}
+          key={
+            group.kind === "module"
+              ? `mod-${group.module}`
+              : `${group.provider}-${group.service}`
+          }
           className="overflow-hidden py-0"
         >
           <div className="flex items-center justify-between gap-2 border-b bg-muted/30 px-3 py-2">
             <div className="flex items-center gap-2 text-sm font-medium">
-              <ProviderIcon provider={group.provider} />
-              <span>{group.provider}</span>
-              <span className="text-muted-foreground">›</span>
-              <span>{group.service}</span>
+              {group.kind === "module" ? (
+                <>
+                  <IconFolderOpen className="size-4 text-muted-foreground" aria-hidden />
+                  <span className="font-mono text-xs">{group.module}</span>
+                </>
+              ) : (
+                <>
+                  <ProviderIcon provider={group.provider} />
+                  <span>{group.provider}</span>
+                  <span className="text-muted-foreground">›</span>
+                  <span>{group.service}</span>
+                </>
+              )}
             </div>
             <span className="font-mono text-xs text-muted-foreground tabular-nums">
               {group.resources.length}
@@ -105,13 +134,14 @@ function ProviderIcon({ provider }: { provider: string }) {
   }
 }
 
-function groupByCategory(resources: Resource[]): Group[] {
-  const map = new Map<string, Group>();
+function groupByCategory(resources: Resource[]): CategoryGroup[] {
+  const map = new Map<string, CategoryGroup>();
   for (const r of resources) {
     const key = `${r.category.provider}|${r.category.service}`;
     let g = map.get(key);
     if (!g) {
       g = {
+        kind: "category",
         provider: r.category.provider,
         service: r.category.service,
         resources: [],
@@ -124,4 +154,18 @@ function groupByCategory(resources: Resource[]): Group[] {
     if (a.provider !== b.provider) return a.provider.localeCompare(b.provider);
     return a.service.localeCompare(b.service);
   });
+}
+
+function groupByModule(resources: Resource[]): ModuleGroup[] {
+  const map = new Map<string, ModuleGroup>();
+  for (const r of resources) {
+    const mod = r.module || "(root)";
+    let g = map.get(mod);
+    if (!g) {
+      g = { kind: "module", module: mod, resources: [] };
+      map.set(mod, g);
+    }
+    g.resources.push(r);
+  }
+  return Array.from(map.values()).sort((a, b) => a.module.localeCompare(b.module));
 }

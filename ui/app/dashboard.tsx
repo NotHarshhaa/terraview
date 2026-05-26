@@ -1,0 +1,468 @@
+/**
+ * Dashboard — main Terraview UI with filters, live updates and power-user tools.
+ */
+
+"use client";
+
+import * as React from "react";
+
+import { useRouter, useSearchParams } from "next/navigation";
+import { IconFilter } from "@tabler/icons-react";
+
+import { AuthGate } from "@/components/auth-gate";
+import { CommandPalette } from "@/components/command-palette";
+import { CopyText } from "@/components/copy-button";
+import { ErrorsBanner } from "@/components/errors-banner";
+import { ExportMenu } from "@/components/export-menu";
+import { FilterSidebar } from "@/components/filter-sidebar";
+import { Header } from "@/components/header";
+import { ResourceGrid } from "@/components/resource-grid";
+import { useDashboardHotkeys } from "@/components/shortcuts-sheet";
+import { Button } from "@/components/ui/button";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SummaryBar } from "@/components/summary-bar";
+import { useSnapshot } from "@/lib/api";
+import {
+  buildFacets,
+  emptyFilters,
+  filterActiveCount,
+  filterResources,
+  filtersFromSearchParams,
+  filtersToSearchParams,
+  groupByFromParams,
+  mergeFilters,
+  parseFilterSpec,
+  summariseResources,
+  type FilterState,
+  type GroupByMode,
+} from "@/lib/filters";
+import type { Resource, Status } from "@/lib/types";
+
+const EMPTY_RESOURCES: Resource[] = [];
+const GROUP_BY_KEY = "terraview_group_by";
+
+export function Dashboard() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const {
+    snapshot,
+    loading,
+    error,
+    refresh,
+    refreshing,
+    hasLoaded,
+    unauthorized,
+    authRequired,
+    connectionState,
+    signIn,
+    signOut,
+  } = useSnapshot();
+
+  const [filters, setFilters] = React.useState<FilterState>(() =>
+    filtersFromSearchParams(searchParams),
+  );
+  const [activeStatuses, setActiveStatuses] = React.useState<Set<Status>>(
+    new Set(),
+  );
+  const [groupBy, setGroupBy] = React.useState<GroupByMode>(() =>
+    groupByFromParams(searchParams),
+  );
+  const [commandOpen, setCommandOpen] = React.useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = React.useState(false);
+  const defaultFilterApplied = React.useRef(false);
+  const urlHydrated = React.useRef(false);
+
+  const {
+    search,
+    providers: activeProviders,
+    categories: activeCategories,
+    modules: activeModules,
+    tags: activeTags,
+  } = filters;
+
+  React.useEffect(() => {
+    if (urlHydrated.current) return;
+    const fromUrl = filtersFromSearchParams(searchParams);
+    const hasUrlFilters = filterActiveCount(fromUrl) > 0 || searchParams.get("group");
+    if (hasUrlFilters) {
+      setFilters(fromUrl);
+      setGroupBy(groupByFromParams(searchParams));
+      urlHydrated.current = true;
+      defaultFilterApplied.current = true;
+      return;
+    }
+    urlHydrated.current = true;
+  }, [searchParams]);
+
+  React.useEffect(() => {
+    const spec = snapshot?.ui?.default_filter?.trim();
+    if (!spec || defaultFilterApplied.current) return;
+    const parsed = parseFilterSpec(spec);
+    setFilters((prev) =>
+      mergeFilters(prev, {
+        search: parsed.search,
+        statuses: parsed.statuses,
+        providers: parsed.providers,
+        categories: parsed.categories,
+        modules: parsed.modules,
+        tags: parsed.tags,
+      }),
+    );
+    defaultFilterApplied.current = true;
+  }, [snapshot?.ui?.default_filter]);
+
+  React.useEffect(() => {
+    if (searchParams.get("group")) return;
+    const stored = localStorage.getItem(GROUP_BY_KEY);
+    if (stored === "module" || stored === "category") {
+      setGroupBy(stored);
+    }
+  }, [searchParams]);
+
+  React.useEffect(() => {
+    if (!urlHydrated.current) return;
+    const params = filtersToSearchParams(filters, groupBy);
+    const qs = params.toString();
+    router.replace(qs ? `/?${qs}` : "/", { scroll: false });
+  }, [filters, groupBy, router]);
+
+  const showCostColumn = snapshot?.ui?.show_cost_column ?? false;
+  const pageTitle = snapshot?.ui?.title?.trim() || "Terraview";
+  const resources = snapshot?.resources ?? EMPTY_RESOURCES;
+
+  const sidebarFiltered = React.useMemo(
+    () =>
+      filterResources(resources, {
+        ...filters,
+        statuses: new Set(),
+      }),
+    [resources, filters],
+  );
+
+  const filtered = React.useMemo(
+    () =>
+      filterResources(sidebarFiltered, {
+        search: "",
+        statuses: activeStatuses,
+        providers: new Set(),
+        categories: new Set(),
+        modules: new Set(),
+        tags: new Set(),
+      }),
+    [sidebarFiltered, activeStatuses],
+  );
+
+  const facetSummary = React.useMemo(
+    () => summariseResources(sidebarFiltered),
+    [sidebarFiltered],
+  );
+
+  const { providers, categories, modules, tags } = React.useMemo(
+    () => buildFacets(sidebarFiltered),
+    [sidebarFiltered],
+  );
+
+  const toggleSet = (key: "providers" | "categories" | "modules" | "tags", value: string) => {
+    setFilters((prev) => {
+      const set = new Set(prev[key]);
+      if (set.has(value)) set.delete(value);
+      else set.add(value);
+      return { ...prev, [key]: set };
+    });
+  };
+
+  const clearFilters = React.useCallback(() => {
+    setActiveStatuses(new Set());
+    setFilters(emptyFilters());
+  }, []);
+
+  const setSearch = React.useCallback((value: string) => {
+    setFilters((prev) => ({ ...prev, search: value }));
+  }, []);
+
+  const setGroupByMode = React.useCallback((mode: GroupByMode) => {
+    setGroupBy(mode);
+    localStorage.setItem(GROUP_BY_KEY, mode);
+  }, []);
+
+  const focusSearch = React.useCallback(() => {
+    document.getElementById("resource-search")?.focus();
+  }, []);
+
+  useDashboardHotkeys({
+    onFocusSearch: focusSearch,
+    onOpenCommand: () => setCommandOpen(true),
+    onRefresh: () => void refresh(),
+    onClearFilters: clearFilters,
+    onShowShortcuts: () => setShortcutsOpen(true),
+  });
+
+  const activeCount =
+    filterActiveCount(filters) + activeStatuses.size;
+
+  const filterSummary = React.useMemo(() => {
+    const parts: string[] = [];
+    if (search.trim()) parts.push(`q=${search.trim()}`);
+    if (activeStatuses.size) parts.push(`status=${[...activeStatuses].join(",")}`);
+    if (activeProviders.size) parts.push(`provider=${[...activeProviders].join(",")}`);
+    if (activeCategories.size) parts.push(`category=${[...activeCategories].join(",")}`);
+    if (activeModules.size) parts.push(`module=${[...activeModules].join(",")}`);
+    if (activeTags.size) parts.push(`tag=${[...activeTags].join(",")}`);
+    return parts.join("&") || "none";
+  }, [
+    search,
+    activeStatuses,
+    activeProviders,
+    activeCategories,
+    activeModules,
+    activeTags,
+  ]);
+
+  const filterSidebar = (
+    <FilterSidebar
+      search={search}
+      onSearchChange={setSearch}
+      providers={providers}
+      activeProviders={activeProviders}
+      onProviderToggle={(v) => toggleSet("providers", v)}
+      categories={categories}
+      activeCategories={activeCategories}
+      onCategoryToggle={(v) => toggleSet("categories", v)}
+      modules={modules}
+      activeModules={activeModules}
+      onModuleToggle={(v) => toggleSet("modules", v)}
+      tags={tags}
+      activeTags={activeTags}
+      onTagToggle={(v) => toggleSet("tags", v)}
+      activeCount={activeCount}
+      onClear={clearFilters}
+    />
+  );
+
+  return (
+    <div className="min-h-svh bg-background">
+      <Header
+        title={pageTitle}
+        backendType={snapshot?.backend_type ?? ""}
+        generatedAt={snapshot?.generated_at}
+        connectionState={connectionState}
+        refreshing={refreshing}
+        onRefresh={refresh}
+        authRequired={authRequired && !unauthorized}
+        onSignOut={signOut}
+        onOpenCommand={() => setCommandOpen(true)}
+        onShowShortcuts={() => setShortcutsOpen(true)}
+        exportMenu={
+          snapshot ? (
+            <ExportMenu
+              resources={filtered}
+              generatedAt={snapshot.generated_at}
+              workingDir={snapshot.working_dir}
+              filterSummary={filterSummary}
+            />
+          ) : null
+        }
+        mobileFilters={
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-1.5 lg:hidden">
+                <IconFilter className="size-3.5" aria-hidden />
+                Filters
+                {activeCount > 0 ? (
+                  <span className="font-mono text-xs">({activeCount})</span>
+                ) : null}
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-72 p-0">
+              <SheetHeader className="sr-only">
+                <SheetTitle>Filters</SheetTitle>
+              </SheetHeader>
+              {filterSidebar}
+            </SheetContent>
+          </Sheet>
+        }
+      />
+
+      <CommandPalette
+        open={commandOpen}
+        onOpenChange={setCommandOpen}
+        resources={sidebarFiltered}
+        onRefresh={refresh}
+        onClearFilters={clearFilters}
+      />
+
+      <div className="mx-auto flex w-full max-w-7xl gap-6 px-4 py-6">
+        <div className="hidden w-64 shrink-0 lg:block">
+          <div className="sticky top-[60px] h-[calc(100svh-72px)]">
+            {filterSidebar}
+          </div>
+        </div>
+
+        <main className="min-w-0 flex-1 space-y-4">
+          {unauthorized && !snapshot ? (
+            <AuthGate onSignIn={signIn} error={error} />
+          ) : !hasLoaded && loading ? (
+            <LoadingState />
+          ) : error && !snapshot ? (
+            <ErrorState message={error} onRetry={refresh} />
+          ) : snapshot ? (
+            <>
+              {error ? (
+                <StaleDataBanner message={error} onRetry={refresh} />
+              ) : null}
+              <SummaryBar
+                summary={facetSummary}
+                activeStatuses={activeStatuses}
+                onStatusToggle={(status) => {
+                  setActiveStatuses((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(status)) next.delete(status);
+                    else next.add(status);
+                    return next;
+                  });
+                }}
+              />
+              <ErrorsBanner errors={snapshot.errors} />
+              <Tabs
+                value={groupBy}
+                onValueChange={(v) => setGroupByMode(v as GroupByMode)}
+              >
+                <TabsList>
+                  <TabsTrigger value="category">By service</TabsTrigger>
+                  <TabsTrigger value="module">By module</TabsTrigger>
+                </TabsList>
+              </Tabs>
+              <ResourceGrid
+                resources={filtered}
+                totalBeforeFilter={sidebarFiltered.length}
+                showCostColumn={showCostColumn}
+                groupBy={groupBy}
+              />
+              <footer className="space-y-1 pt-2 text-center text-xs text-muted-foreground">
+                <CopyText
+                  value={snapshot.working_dir}
+                  mono
+                  className="justify-center"
+                />
+                <p>
+                  showing {filtered.length} of {sidebarFiltered.length} resources
+                  {sidebarFiltered.length !== resources.length
+                    ? ` (${resources.length} total)`
+                    : ""}
+                  {" · "}
+                  <button
+                    type="button"
+                    className="underline-offset-2 hover:underline"
+                    onClick={() => setCommandOpen(true)}
+                  >
+                    ⌘K jump
+                  </button>
+                </p>
+              </footer>
+            </>
+          ) : null}
+        </main>
+      </div>
+
+      <Sheet open={shortcutsOpen} onOpenChange={setShortcutsOpen}>
+        <SheetContent side="right" className="w-80">
+          <SheetHeader>
+            <SheetTitle>Keyboard shortcuts</SheetTitle>
+          </SheetHeader>
+          <ul className="mt-4 space-y-3 text-sm text-muted-foreground">
+            <li>
+              <kbd className="rounded bg-muted px-1">/</kbd> focus search
+            </li>
+            <li>
+              <kbd className="rounded bg-muted px-1">Ctrl+K</kbd> command palette
+            </li>
+            <li>
+              <kbd className="rounded bg-muted px-1">r</kbd> refresh
+            </li>
+            <li>
+              <kbd className="rounded bg-muted px-1">Esc</kbd> clear filters
+            </li>
+            <li>
+              <kbd className="rounded bg-muted px-1">?</kbd> this panel
+            </li>
+          </ul>
+        </SheetContent>
+      </Sheet>
+    </div>
+  );
+}
+
+function LoadingState() {
+  return (
+    <div className="space-y-4">
+      <Skeleton className="h-8 w-2/3" />
+      <Skeleton className="h-32 w-full" />
+      <Skeleton className="h-32 w-full" />
+    </div>
+  );
+}
+
+function ErrorState({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="rounded-md border border-destructive/30 bg-destructive/5 p-6 text-sm">
+      <h2 className="mb-1 font-medium text-destructive">
+        Could not load snapshot
+      </h2>
+      <p className="mb-3 text-muted-foreground">{message}</p>
+      <p className="text-xs text-muted-foreground">
+        Start the API in another terminal:{" "}
+        <code className="rounded bg-muted px-1 py-0.5">
+          go run ./cmd/terraview serve ./testdata/sample-project --no-ui
+        </code>
+        <br />
+        Then run the UI:{" "}
+        <code className="rounded bg-muted px-1 py-0.5">cd ui && npm run dev</code>
+      </p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="mt-3 rounded-md border bg-background px-3 py-1.5 text-xs hover:bg-muted"
+      >
+        Try again
+      </button>
+    </div>
+  );
+}
+
+function StaleDataBanner({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div
+      role="alert"
+      className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-xs text-amber-800 dark:text-amber-200"
+    >
+      <span>Refresh failed — showing cached data. {message}</span>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="underline underline-offset-2 hover:no-underline"
+      >
+        Retry
+      </button>
+    </div>
+  );
+}
