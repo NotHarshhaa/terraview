@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
+	"strings"
 )
 
 // PlanAction is the normalised "what is Terraform going to do?" verb for a
-// single resource change. The Terraform JSON plan format expresses the same
-// idea as a slice of action strings ("no-op", "create", "delete", etc.) —
-// we collapse that into a single value the classifier can switch on.
+// single resource change.
 type PlanAction string
 
 const (
@@ -21,8 +21,7 @@ const (
 	PlanActionRead    PlanAction = "read"
 )
 
-// PlanResource is the per-resource plan summary the engine consumes. Only the
-// fields we actually use in the dashboard are kept.
+// PlanResource is the per-resource plan summary the engine consumes.
 type PlanResource struct {
 	Address string
 	Type    string
@@ -30,59 +29,91 @@ type PlanResource struct {
 	Action  PlanAction
 }
 
-// ParsePlanJSON parses a `terraform show -json plan.tfplan` document from r.
-// The format is stable and documented:
-// https://developer.hashicorp.com/terraform/internals/json-format
+// DriftInfo describes provider drift detected in a plan JSON document
+// (resource_drift section or refresh-only diffs).
+type DriftInfo struct {
+	Reason         string
+	ChangedAttrs   []string
+}
+
+// PlanParseResult bundles intentional apply changes and drift findings.
+type PlanParseResult struct {
+	Changes []PlanResource
+	Drift   map[string]DriftInfo
+}
+
+// ParsePlanJSON parses a `terraform show -json plan.tfplan` document.
 func ParsePlanJSON(r io.Reader) ([]PlanResource, error) {
+	res, err := ParsePlanFull(r)
+	if err != nil {
+		return nil, err
+	}
+	return res.Changes, nil
+}
+
+// ParsePlanFull parses planned changes and the resource_drift section.
+func ParsePlanFull(r io.Reader) (PlanParseResult, error) {
 	raw, err := io.ReadAll(r)
 	if err != nil {
-		return nil, fmt.Errorf("read plan: %w", err)
+		return PlanParseResult{}, fmt.Errorf("read plan: %w", err)
 	}
 
 	var plan struct {
-		ResourceChanges []struct {
-			Address      string `json:"address"`
-			Type         string `json:"type"`
-			Name         string `json:"name"`
-			Mode         string `json:"mode"`
-			Change       struct {
-				Actions []string `json:"actions"`
-			} `json:"change"`
-		} `json:"resource_changes"`
+		ResourceChanges []planChangeEntry `json:"resource_changes"`
+		ResourceDrift   []planChangeEntry `json:"resource_drift"`
 	}
 	if err := json.Unmarshal(raw, &plan); err != nil {
-		return nil, fmt.Errorf("parse plan: %w", err)
+		return PlanParseResult{}, fmt.Errorf("parse plan: %w", err)
 	}
 
-	out := make([]PlanResource, 0, len(plan.ResourceChanges))
+	out := PlanParseResult{Drift: map[string]DriftInfo{}}
+
 	for _, rc := range plan.ResourceChanges {
 		if rc.Mode != "" && rc.Mode != "managed" {
 			continue
 		}
 		action := collapseActions(rc.Change.Actions)
 		if action == PlanActionNoOp {
-			continue // Skip no-ops; the classifier treats absent-from-plan as no-op.
+			continue
 		}
-		out = append(out, PlanResource{
+		out.Changes = append(out.Changes, PlanResource{
 			Address: rc.Address,
 			Type:    rc.Type,
 			Name:    rc.Name,
 			Action:  action,
 		})
 	}
+
+	for _, rd := range plan.ResourceDrift {
+		if rd.Mode != "" && rd.Mode != "managed" {
+			continue
+		}
+		attrs := diffAttributes(rd.Change.Before, rd.Change.After)
+		reason := "provider drift detected"
+		if len(attrs) > 0 {
+			reason = "drifted: " + strings.Join(attrs, ", ")
+		}
+		out.Drift[rd.Address] = DriftInfo{
+			Reason:       reason,
+			ChangedAttrs: attrs,
+		}
+	}
+
 	return out, nil
 }
 
-// collapseActions translates Terraform's action arrays into a single
-// PlanAction. The combinations Terraform emits are:
-//
-//	["no-op"]               → no-op
-//	["create"]              → create
-//	["read"]                → read (data source refresh, ignored)
-//	["update"]              → update
-//	["delete"]              → delete
-//	["delete","create"]     → replace
-//	["create","delete"]     → replace (create-before-destroy lifecycle)
+type planChangeEntry struct {
+	Address string `json:"address"`
+	Type    string `json:"type"`
+	Name    string `json:"name"`
+	Mode    string `json:"mode"`
+	Change  struct {
+		Actions []string       `json:"actions"`
+		Before  map[string]any `json:"before"`
+		After   map[string]any `json:"after"`
+	} `json:"change"`
+}
+
 func collapseActions(actions []string) PlanAction {
 	if len(actions) == 0 {
 		return PlanActionNoOp
@@ -117,4 +148,53 @@ func collapseActions(actions []string) PlanAction {
 		return PlanActionDelete
 	}
 	return PlanActionUpdate
+}
+
+// diffAttributes returns top-level attribute keys that differ between before
+// and after in a plan/drift change block.
+func diffAttributes(before, after map[string]any) []string {
+	if before == nil && after == nil {
+		return nil
+	}
+	keys := map[string]struct{}{}
+	for k := range before {
+		keys[k] = struct{}{}
+	}
+	for k := range after {
+		keys[k] = struct{}{}
+	}
+	var changed []string
+	for k := range keys {
+		if isSensitivePlanKey(k) {
+			continue
+		}
+		b, bOK := before[k]
+		a, aOK := after[k]
+		if !bOK || !aOK || !jsonEqual(b, a) {
+			changed = append(changed, k)
+		}
+	}
+	sort.Strings(changed)
+	if len(changed) > 5 {
+		return append(changed[:5], fmt.Sprintf("+%d more", len(changed)-5))
+	}
+	return changed
+}
+
+func isSensitivePlanKey(k string) bool {
+	switch strings.ToLower(k) {
+	case "id", "arn", "unique_id", "password", "secret", "token", "private_key":
+		return true
+	}
+	return strings.Contains(strings.ToLower(k), "secret") ||
+		strings.Contains(strings.ToLower(k), "password")
+}
+
+func jsonEqual(a, b any) bool {
+	ab, err1 := json.Marshal(a)
+	bb, err2 := json.Marshal(b)
+	if err1 != nil || err2 != nil {
+		return fmt.Sprint(a) == fmt.Sprint(b)
+	}
+	return string(ab) == string(bb)
 }

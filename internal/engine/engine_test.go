@@ -189,6 +189,130 @@ resource "aws_vpc" "main" {
 	}
 }
 
+func TestParsePlanDrift(t *testing.T) {
+	raw := `{
+		"resource_drift": [{
+			"address": "aws_instance.web",
+			"type": "aws_instance",
+			"name": "web",
+			"mode": "managed",
+			"change": {
+				"actions": ["update"],
+				"before": { "instance_type": "t3.micro", "tags": {"Name": "web"} },
+				"after": { "instance_type": "t3.small", "tags": {"Name": "web"} }
+			}
+		}]
+	}`
+	res, err := engine.ParsePlanFull(strings.NewReader(raw))
+	if err != nil {
+		t.Fatalf("ParsePlanFull: %v", err)
+	}
+	if len(res.Drift) != 1 {
+		t.Fatalf("expected 1 drift entry, got %d", len(res.Drift))
+	}
+	d, ok := res.Drift["aws_instance.web"]
+	if !ok {
+		t.Fatal("drift missing for aws_instance.web")
+	}
+	if !strings.Contains(d.Reason, "instance_type") {
+		t.Fatalf("reason = %q, want instance_type mentioned", d.Reason)
+	}
+}
+
+func TestClassifyDrifted(t *testing.T) {
+	state := &engine.StateResource{
+		Address:     "aws_instance.web",
+		Type:        "aws_instance",
+		Name:        "web",
+		Drifted:     true,
+		DriftReason: "drifted: instance_type",
+	}
+	status, reason := engine.Classify(nil, state, nil)
+	if status != models.StatusDrifted {
+		t.Fatalf("status = %q, want drifted", status)
+	}
+	if reason == "" {
+		t.Fatal("expected drift reason")
+	}
+}
+
+func TestEngineAppliesPlanDrift(t *testing.T) {
+	root := t.TempDir()
+	workingDir := filepath.Join(root, "project")
+	if err := os.MkdirAll(workingDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workingDir, "main.tf"), []byte(`
+resource "aws_instance" "web" {
+  ami = "ami-123"
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stateJSON := `{
+		"version": 4,
+		"terraform_version": "1.5.0",
+		"resources": [{
+			"mode": "managed",
+			"type": "aws_instance",
+			"name": "web",
+			"provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+			"instances": [{
+				"attributes": {
+					"id": "i-abc",
+					"instance_type": "t3.micro",
+					"instance_state": "running"
+				}
+			}]
+		}]
+	}`
+	if err := os.WriteFile(filepath.Join(workingDir, "terraform.tfstate"), []byte(stateJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	planJSON := `{
+		"resource_drift": [{
+			"address": "aws_instance.web",
+			"type": "aws_instance",
+			"name": "web",
+			"mode": "managed",
+			"change": {
+				"actions": ["update"],
+				"before": { "instance_type": "t3.micro" },
+				"after": { "instance_type": "t3.small" }
+			}
+		}]
+	}`
+	planPath := filepath.Join(root, "plan.json")
+	if err := os.WriteFile(planPath, []byte(planJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	be, err := backend.New(backend.Config{Type: "local", WorkingDir: workingDir})
+	if err != nil {
+		t.Fatalf("backend.New: %v", err)
+	}
+	snap, err := engine.New().Refresh(context.Background(), engine.Options{
+		WorkingDir: workingDir,
+		Backend:    be,
+		PlanPath:   planPath,
+	})
+	if err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
+	var found bool
+	for _, r := range snap.Resources {
+		if r.Address == "aws_instance.web" {
+			found = true
+			if r.Status != models.StatusDrifted {
+				t.Fatalf("status = %q, want drifted", r.Status)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("aws_instance.web not found in snapshot")
+	}
+}
+
 func findRepoRoot(t *testing.T) string {
 	t.Helper()
 	wd, err := os.Getwd()

@@ -2,12 +2,13 @@ package api
 
 import (
 	"context"
-	"crypto/subtle"
 	"errors"
 	"log"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/NotHarshhaa/terraview/internal/models"
 )
 
 // Server wires the HTTP layer to the poller and optionally serves the static
@@ -18,22 +19,33 @@ type Server struct {
 	poller    *Poller
 	version   string
 	auth      AuthConfig
+	ui        UIConfig
+	sessions  *sessionStore
 	uiHandler http.Handler // optional, may be nil for headless mode
 	logger    *log.Logger
 }
 
-// AuthConfig drives the optional HTTP basic auth wrapper. When Enabled is
-// false (the default), every request passes through untouched.
+// AuthConfig drives the optional HTTP auth wrapper. When Enabled is false
+// (the default), every request passes through untouched.
 type AuthConfig struct {
-	Enabled  bool
-	Username string
-	Password string
+	Enabled     bool
+	Username    string
+	Password    string
+	AccessToken string // static token for Bearer / ?access_token= (SSE-friendly)
+}
+
+// UIConfig is forwarded to the dashboard via snapshot.ui.
+type UIConfig struct {
+	Title          string
+	ShowCostColumn bool
+	DefaultFilter  string
 }
 
 // Config bundles the bits the API layer doesn't read from the engine.
 type Config struct {
 	Version   string
 	Auth      AuthConfig
+	UI        UIConfig
 	UIHandler http.Handler
 	Logger    *log.Logger
 }
@@ -48,6 +60,8 @@ func NewServer(p *Poller, cfg Config) *Server {
 		poller:    p,
 		version:   cfg.Version,
 		auth:      cfg.Auth,
+		ui:        cfg.UI,
+		sessions:  newSessionStore(),
 		uiHandler: cfg.UIHandler,
 		logger:    logger,
 	}
@@ -61,6 +75,7 @@ func NewServer(p *Poller, cfg Config) *Server {
 //	GET  /api/snapshot         -> full Snapshot
 //	GET  /api/status           -> compact status payload for CI comments
 //	POST /api/refresh          -> force an out-of-band refresh
+//	POST /api/login           -> exchange credentials for session token
 //	GET  /api/events           -> SSE stream of refresh events
 //	GET  /                     -> static UI (if uiHandler is configured)
 func (s *Server) Handler() http.Handler {
@@ -72,6 +87,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/snapshot", s.handleSnapshot)
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("/api/refresh", s.handleRefresh)
+	mux.HandleFunc("/api/login", s.handleLogin)
 	mux.HandleFunc("/api/events", s.handleEvents)
 
 	if s.uiHandler != nil {
@@ -80,16 +96,32 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("/", s.handleRoot)
 	}
 
-	// Order: log → CORS → auth → mux. Auth wraps last so /api/health stays
-	// behind auth if it's enabled (that's intentional — operators who turn on
-	// auth probably don't want unauthenticated health probes either).
+	// Order: log → CORS → auth → mux.
 	var h http.Handler = mux
 	if s.auth.Enabled {
-		h = s.basicAuth(h)
+		h = s.authMiddleware(h)
 	}
 	h = s.cors(h)
 	h = s.logRequests(h)
 	return h
+}
+
+func (s *Server) uiSettings() *models.UISettings {
+	return &models.UISettings{
+		Title:          s.ui.Title,
+		ShowCostColumn: s.ui.ShowCostColumn,
+		DefaultFilter:  s.ui.DefaultFilter,
+		AuthRequired:   s.auth.Enabled,
+	}
+}
+
+func (s *Server) withUI(snap *models.Snapshot) *models.Snapshot {
+	if snap == nil {
+		return nil
+	}
+	out := *snap
+	out.UI = s.uiSettings()
+	return &out
 }
 
 // handleRoot is the friendly fallback when no UI bundle is mounted (e.g.
@@ -116,32 +148,15 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 </body></html>`))
 }
 
-// cors permits the dev UI on :3000 to talk to the API on :7777. The
-// production build is served from the same origin so no preflight runs.
+// cors permits the dev UI on :3000 to talk to the API on :7777.
 func (s *Server) cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-// basicAuth is a constant-time HTTP basic auth wrapper. The whole API is
-// gated, not just the mutating endpoints, because everything Terraview
-// surfaces is potentially sensitive (resource names, tags, IP ranges).
-func (s *Server) basicAuth(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		user, pass, ok := r.BasicAuth()
-		userMatches := subtle.ConstantTimeCompare([]byte(user), []byte(s.auth.Username)) == 1
-		passMatches := subtle.ConstantTimeCompare([]byte(pass), []byte(s.auth.Password)) == 1
-		if !ok || !userMatches || !passMatches {
-			w.Header().Set("WWW-Authenticate", `Basic realm="terraview"`)
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		next.ServeHTTP(w, r)

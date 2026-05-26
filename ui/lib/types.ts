@@ -70,6 +70,14 @@ export interface Snapshot {
   resources: Resource[];
   summary: Summary;
   errors?: SnapshotError[];
+  ui?: UISettings;
+}
+
+export interface UISettings {
+  title?: string;
+  show_cost_column?: boolean;
+  default_filter?: string;
+  auth_required?: boolean;
 }
 
 /** Display metadata for each status: label, dot colour, foreground/background classes. */

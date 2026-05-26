@@ -92,6 +92,15 @@ type Resource struct {
 	LastChanged time.Time `json:"last_changed,omitempty"`
 }
 
+// UISettings carries dashboard options from .terraview.yaml into the API
+// response so the UI can honour them without a separate config roundtrip.
+type UISettings struct {
+	Title          string `json:"title,omitempty"`
+	ShowCostColumn bool   `json:"show_cost_column,omitempty"`
+	DefaultFilter  string `json:"default_filter,omitempty"`
+	AuthRequired   bool   `json:"auth_required,omitempty"`
+}
+
 // Snapshot is the full payload the engine produces on each refresh and the
 // API serves to the UI. Everything else is derived from this.
 type Snapshot struct {
@@ -101,6 +110,7 @@ type Snapshot struct {
 	Resources   []Resource      `json:"resources"`
 	Summary     Summary         `json:"summary"`
 	Errors      []SnapshotError `json:"errors,omitempty"`
+	UI          *UISettings     `json:"ui,omitempty"`
 }
 
 // Summary is a pre-aggregated count of statuses for the summary bar at the top

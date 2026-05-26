@@ -25,6 +25,7 @@ import { ResourceRow } from "./resource-row";
 interface ResourceGridProps {
   resources: Resource[];
   totalBeforeFilter: number;
+  showCostColumn?: boolean;
 }
 
 interface Group {
@@ -36,6 +37,7 @@ interface Group {
 export function ResourceGrid({
   resources,
   totalBeforeFilter,
+  showCostColumn = false,
 }: ResourceGridProps) {
   const groups = React.useMemo(() => groupByCategory(resources), [resources]);
 
@@ -74,7 +76,11 @@ export function ResourceGrid({
           </div>
           <div className="divide-y">
             {group.resources.map((r) => (
-              <ResourceRow key={r.address} resource={r} />
+              <ResourceRow
+                key={r.address}
+                resource={r}
+                showCostColumn={showCostColumn}
+              />
             ))}
           </div>
         </Card>

@@ -5,13 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+
+	"cloud.google.com/go/storage"
+	"github.com/NotHarshhaa/terraview/internal/engine"
+	"google.golang.org/api/option"
 )
 
 // GCSBackend reads a Terraform state file from a Google Cloud Storage bucket.
-//
-// Like the S3 adapter, the actual cloud SDK calls are left as a stub so the
-// project stays dependency-light by default. Drop in cloud.google.com/go/storage
-// and use Application Default Credentials.
 type GCSBackend struct {
 	bucket string
 	object string
@@ -28,12 +28,32 @@ func NewGCS(cfg Config) (*GCSBackend, error) {
 	return &GCSBackend{bucket: cfg.Bucket, object: key}, nil
 }
 
-// LoadState is a stub. The production implementation should:
-//  1. storage.NewClient(ctx) — picks up ADC (GOOGLE_APPLICATION_CREDENTIALS or
-//     Workload Identity).
-//  2. client.Bucket(b.bucket).Object(b.object).NewReader(ctx).
 func (g *GCSBackend) LoadState(ctx context.Context) (io.ReadCloser, error) {
-	return nil, fmt.Errorf("gcs backend not yet implemented: wire cloud.google.com/go/storage for gs://%s/%s", g.bucket, g.object)
+	client, err := storage.NewClient(ctx, option.WithScopes(storage.ScopeReadOnly))
+	if err != nil {
+		return nil, fmt.Errorf("gcs client: %w", err)
+	}
+
+	reader, err := client.Bucket(g.bucket).Object(g.object).NewReader(ctx)
+	if err != nil {
+		_ = client.Close()
+		if errors.Is(err, storage.ErrObjectNotExist) {
+			return nil, fmt.Errorf("%w: gs://%s/%s", engine.ErrStateNotFound, g.bucket, g.object)
+		}
+		return nil, fmt.Errorf("gcs read: %w", err)
+	}
+	return &gcsReadCloser{Reader: reader, client: client}, nil
+}
+
+type gcsReadCloser struct {
+	*storage.Reader
+	client *storage.Client
+}
+
+func (r *gcsReadCloser) Close() error {
+	err := r.Reader.Close()
+	_ = r.client.Close()
+	return err
 }
 
 func (g *GCSBackend) Name() string { return fmt.Sprintf("gs://%s/%s", g.bucket, g.object) }

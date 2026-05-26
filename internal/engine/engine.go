@@ -111,16 +111,19 @@ func (e *Engine) Refresh(ctx context.Context, opts Options) (*models.Snapshot, e
 	}
 
 	var planResources []PlanResource
+	var driftByAddr map[string]DriftInfo
 	if opts.PlanPath != "" {
-		if pr, perr := loadPlanFile(opts.PlanPath); perr != nil {
+		if pr, drift, perr := loadPlanFile(opts.PlanPath); perr != nil {
 			snap.Errors = append(snap.Errors, models.SnapshotError{
 				Source:  "plan",
 				Message: perr.Error(),
 			})
 		} else {
 			planResources = pr
+			driftByAddr = drift
 		}
 	}
+	applyDriftToState(stateResources, driftByAddr)
 
 	resources := mergeAndClassify(hcl.Resources, stateResources, planResources)
 	snap.Resources = resources
@@ -297,14 +300,30 @@ func summarise(rs []models.Resource) models.Summary {
 	return s
 }
 
-func loadPlanFile(path string) ([]PlanResource, error) {
+func loadPlanFile(path string) ([]PlanResource, map[string]DriftInfo, error) {
 	abs, _ := filepath.Abs(path)
 	f, err := os.Open(abs)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer f.Close()
-	return ParsePlanJSON(f)
+	res, err := ParsePlanFull(f)
+	if err != nil {
+		return nil, nil, err
+	}
+	return res.Changes, res.Drift, nil
+}
+
+func applyDriftToState(states []StateResource, drift map[string]DriftInfo) {
+	if len(drift) == 0 {
+		return
+	}
+	for i := range states {
+		if d, ok := drift[states[i].Address]; ok {
+			states[i].Drifted = true
+			states[i].DriftReason = d.Reason
+		}
+	}
 }
 
 // isStateNotFound is true for the typed sentinel each backend wraps a missing

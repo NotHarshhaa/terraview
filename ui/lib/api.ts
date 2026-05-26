@@ -11,25 +11,79 @@ import type { Snapshot } from "./types";
 const API_BASE =
   process.env.NEXT_PUBLIC_TERRAVIEW_API?.replace(/\/$/, "") ?? "";
 
-function apiUrl(path: string): string {
-  return `${API_BASE}${path}`;
+const AUTH_STORAGE_KEY = "terraview_auth";
+
+interface StoredAuth {
+  username?: string;
+  password?: string;
+  accessToken?: string;
+}
+
+function apiUrl(path: string, query?: string): string {
+  const base = `${API_BASE}${path}`;
+  if (!query) return base;
+  return `${base}${base.includes("?") ? "&" : "?"}${query}`;
+}
+
+export function getStoredAuth(): StoredAuth | null {
+  if (typeof window === "undefined") return null;
+  const raw = sessionStorage.getItem(AUTH_STORAGE_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as StoredAuth;
+  } catch {
+    return null;
+  }
+}
+
+export function setStoredAuth(auth: StoredAuth | null) {
+  if (typeof window === "undefined") return;
+  if (!auth || (!auth.accessToken && !auth.username)) {
+    sessionStorage.removeItem(AUTH_STORAGE_KEY);
+    return;
+  }
+  sessionStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(auth));
+}
+
+function authHeaders(): Record<string, string> {
+  const auth = getStoredAuth();
+  if (!auth) return {};
+  if (auth.accessToken) {
+    return { Authorization: `Bearer ${auth.accessToken}` };
+  }
+  if (auth.username && auth.password) {
+    return { Authorization: `Basic ${btoa(`${auth.username}:${auth.password}`)}` };
+  }
+  return {};
+}
+
+function authQuery(): string {
+  const auth = getStoredAuth();
+  if (auth?.accessToken) {
+    return `access_token=${encodeURIComponent(auth.accessToken)}`;
+  }
+  return "";
 }
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
     super(message);
     this.name = "ApiError";
   }
 }
 
 async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...authHeaders() };
   if (init?.body) {
     headers["Content-Type"] = "application/json";
   }
   const res = await fetch(apiUrl(path), {
     ...init,
     headers: { ...headers, ...(init?.headers as Record<string, string>) },
+    credentials: "include",
     cache: "no-store",
   });
   if (!res.ok) {
@@ -53,11 +107,23 @@ export async function refreshSnapshot(): Promise<Snapshot> {
   return fetchJSON<Snapshot>("/api/refresh", { method: "POST" });
 }
 
+export async function login(
+  username: string,
+  password: string,
+): Promise<{ access_token?: string }> {
+  return fetchJSON("/api/login", {
+    method: "POST",
+    body: JSON.stringify({ username, password }),
+  });
+}
+
 interface SnapshotState {
   snapshot: Snapshot | null;
   loading: boolean;
   error: string | null;
   hasLoaded: boolean;
+  authRequired: boolean;
+  unauthorized: boolean;
 }
 
 export function useSnapshot() {
@@ -66,6 +132,8 @@ export function useSnapshot() {
     loading: true,
     error: null,
     hasLoaded: false,
+    authRequired: false,
+    unauthorized: false,
   });
   const [refreshing, setRefreshing] = React.useState(false);
   const loadGen = React.useRef(0);
@@ -80,15 +148,20 @@ export function useSnapshot() {
         loading: false,
         error: null,
         hasLoaded: true,
+        authRequired: snap.ui?.auth_required ?? false,
+        unauthorized: false,
       });
     } catch (err) {
       if (gen !== loadGen.current) return;
       const message = err instanceof Error ? err.message : String(err);
+      const unauthorized = err instanceof ApiError && err.status === 401;
       setState((prev) => ({
         snapshot: prev.snapshot,
         loading: false,
         error: message,
         hasLoaded: prev.hasLoaded,
+        authRequired: unauthorized || prev.authRequired,
+        unauthorized,
       }));
     }
   }, []);
@@ -101,7 +174,8 @@ export function useSnapshot() {
     if (typeof window === "undefined" || typeof EventSource === "undefined") {
       return;
     }
-    const src = new EventSource(apiUrl("/api/events"));
+    const query = authQuery();
+    const src = new EventSource(apiUrl("/api/events", query || undefined));
     let pollFallback: ReturnType<typeof setInterval> | null = null;
     let consecutiveErrors = 0;
 
@@ -143,11 +217,19 @@ export function useSnapshot() {
         loading: false,
         error: null,
         hasLoaded: true,
+        authRequired: snap.ui?.auth_required ?? false,
+        unauthorized: false,
       });
     } catch (err) {
       if (gen !== loadGen.current) return;
       const message = err instanceof Error ? err.message : String(err);
-      setState((prev) => ({ ...prev, error: message }));
+      const unauthorized = err instanceof ApiError && err.status === 401;
+      setState((prev) => ({
+        ...prev,
+        error: message,
+        unauthorized,
+        authRequired: unauthorized || prev.authRequired,
+      }));
     } finally {
       if (gen === loadGen.current) {
         setRefreshing(false);
@@ -155,5 +237,18 @@ export function useSnapshot() {
     }
   }, []);
 
-  return { ...state, refresh, refreshing } as const;
+  const signIn = React.useCallback(
+    async (username: string, password: string) => {
+      const result = await login(username, password);
+      setStoredAuth({
+        username,
+        password,
+        accessToken: result.access_token,
+      });
+      await load();
+    },
+    [load],
+  );
+
+  return { ...state, refresh, refreshing, signIn, reload: load } as const;
 }

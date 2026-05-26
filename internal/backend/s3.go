@@ -5,15 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+
+	"github.com/NotHarshhaa/terraview/internal/engine"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
-// S3Backend reads a Terraform state file from an S3 bucket, optionally
-// honouring a DynamoDB lock table for the canonical state path lookup.
-//
-// The actual AWS SDK calls are not wired up in this skeleton to keep the
-// dependency footprint minimal. The struct + constructor exist so the wiring
-// in api/cmd is complete and the SDK can be dropped in here without touching
-// any caller. The TODO below explains exactly what to add.
+// S3Backend reads a Terraform state file from an S3 bucket.
 type S3Backend struct {
 	bucket   string
 	key      string
@@ -22,10 +22,7 @@ type S3Backend struct {
 	lockTbl  string
 }
 
-// NewS3 validates the config and returns a configured (but un-implemented)
-// S3 backend. We deliberately error out on LoadState rather than at
-// construction so dashboards relying on `terraview serve` can still come up
-// in read-only mode and report a clear status in the UI.
+// NewS3 validates the config and returns a configured S3 backend.
 func NewS3(cfg Config) (*S3Backend, error) {
 	if cfg.Bucket == "" {
 		return nil, errors.New("s3 backend requires bucket")
@@ -42,15 +39,36 @@ func NewS3(cfg Config) (*S3Backend, error) {
 	}, nil
 }
 
-// LoadState is a stub. The production implementation should:
-//  1. Build an aws-sdk-go-v2 config honouring the standard credential chain
-//     (env vars, shared profile, IRSA, IMDS, AssumeRole via `AWS_PROFILE`).
-//  2. Optionally probe the DynamoDB lock table to detect an active apply and
-//     surface that in the snapshot (so the UI can show "🔒 Apply in
-//     progress").
-//  3. s3:GetObject the configured bucket/key and return the body verbatim.
 func (s *S3Backend) LoadState(ctx context.Context) (io.ReadCloser, error) {
-	return nil, fmt.Errorf("s3 backend not yet implemented: configure aws-sdk-go-v2 and wire s3:GetObject for s3://%s/%s", s.bucket, s.key)
+	loadOpts := []func(*config.LoadOptions) error{}
+	if s.region != "" {
+		loadOpts = append(loadOpts, config.WithRegion(s.region))
+	}
+	awsCfg, err := config.LoadDefaultConfig(ctx, loadOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("aws config: %w", err)
+	}
+
+	client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
+		if s.endpoint != "" {
+			o.BaseEndpoint = aws.String(s.endpoint)
+			o.UsePathStyle = true
+		}
+	})
+
+	out, err := client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(s.key),
+	})
+	if err != nil {
+		var nsk *types.NoSuchKey
+		var nsb *types.NoSuchBucket
+		if errors.As(err, &nsk) || errors.As(err, &nsb) {
+			return nil, fmt.Errorf("%w: s3://%s/%s", engine.ErrStateNotFound, s.bucket, s.key)
+		}
+		return nil, fmt.Errorf("s3 get object: %w", err)
+	}
+	return out.Body, nil
 }
 
 func (s *S3Backend) Name() string { return fmt.Sprintf("s3://%s/%s", s.bucket, s.key) }

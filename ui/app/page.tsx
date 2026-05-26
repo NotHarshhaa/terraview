@@ -8,6 +8,7 @@ import * as React from "react";
 
 import { IconFilter } from "@tabler/icons-react";
 
+import { AuthGate } from "@/components/auth-gate";
 import { ErrorsBanner } from "@/components/errors-banner";
 import { FilterSidebar, type Facet } from "@/components/filter-sidebar";
 import { Header } from "@/components/header";
@@ -32,8 +33,16 @@ import {
 const EMPTY_RESOURCES: Resource[] = [];
 
 export default function DashboardPage() {
-  const { snapshot, loading, error, refresh, refreshing, hasLoaded } =
-    useSnapshot();
+  const {
+    snapshot,
+    loading,
+    error,
+    refresh,
+    refreshing,
+    hasLoaded,
+    unauthorized,
+    signIn,
+  } = useSnapshot();
 
   const [search, setSearch] = React.useState("");
   const [activeStatuses, setActiveStatuses] = React.useState<Set<Status>>(
@@ -48,6 +57,22 @@ export default function DashboardPage() {
   const [activeModules, setActiveModules] = React.useState<Set<string>>(
     new Set(),
   );
+  const defaultFilterApplied = React.useRef(false);
+
+  React.useEffect(() => {
+    const spec = snapshot?.ui?.default_filter?.trim();
+    if (!spec || defaultFilterApplied.current) return;
+    const parsed = parseDefaultFilter(spec);
+    if (parsed.statuses?.size) setActiveStatuses(parsed.statuses);
+    if (parsed.providers?.size) setActiveProviders(parsed.providers);
+    if (parsed.categories?.size) setActiveCategories(parsed.categories);
+    if (parsed.modules?.size) setActiveModules(parsed.modules);
+    if (parsed.search) setSearch(parsed.search);
+    defaultFilterApplied.current = true;
+  }, [snapshot?.ui?.default_filter]);
+
+  const showCostColumn = snapshot?.ui?.show_cost_column ?? false;
+  const pageTitle = snapshot?.ui?.title?.trim() || "Terraview";
 
   const resources = snapshot?.resources ?? EMPTY_RESOURCES;
 
@@ -131,7 +156,7 @@ export default function DashboardPage() {
   return (
     <div className="min-h-svh bg-background">
       <Header
-        title="Terraview"
+        title={pageTitle}
         backendType={snapshot?.backend_type ?? ""}
         generatedAt={snapshot?.generated_at}
         refreshing={refreshing}
@@ -165,7 +190,9 @@ export default function DashboardPage() {
         </div>
 
         <main className="min-w-0 flex-1 space-y-4">
-          {!hasLoaded && loading ? (
+          {unauthorized && !snapshot ? (
+            <AuthGate onSignIn={signIn} error={error} />
+          ) : !hasLoaded && loading ? (
             <LoadingState />
           ) : error && !snapshot ? (
             <ErrorState message={error} onRetry={refresh} />
@@ -181,6 +208,7 @@ export default function DashboardPage() {
               <ResourceGrid
                 resources={filtered}
                 totalBeforeFilter={sidebarFiltered.length}
+                showCostColumn={showCostColumn}
               />
               <footer className="pt-2 text-center text-xs text-muted-foreground">
                 <span className="font-mono">{snapshot.working_dir}</span> ·
@@ -325,4 +353,57 @@ function buildFacets(resources: Resource[]) {
     categories: tally((r) => r.category.service).filter((f) => f.value),
     modules: tally((r) => r.module || "(root)"),
   };
+}
+
+function parseDefaultFilter(spec: string): Partial<FilterState> {
+  const out: Partial<FilterState> = {
+    statuses: new Set(),
+    providers: new Set(),
+    categories: new Set(),
+    modules: new Set(),
+  };
+
+  const parts = spec.includes("&") ? spec.split("&") : [spec];
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq < 0) continue;
+    const key = trimmed.slice(0, eq).trim().toLowerCase();
+    const value = trimmed.slice(eq + 1).trim();
+    if (!value) continue;
+
+    switch (key) {
+      case "status":
+        value.split(",").forEach((s) => {
+          const st = s.trim() as Status;
+          if (st) out.statuses!.add(st);
+        });
+        break;
+      case "provider":
+        value.split(",").forEach((s) => {
+          const p = s.trim();
+          if (p) out.providers!.add(p);
+        });
+        break;
+      case "category":
+        value.split(",").forEach((s) => {
+          const c = s.trim();
+          if (c) out.categories!.add(c);
+        });
+        break;
+      case "module":
+        value.split(",").forEach((s) => {
+          const m = s.trim();
+          if (m) out.modules!.add(m);
+        });
+        break;
+      case "q":
+      case "search":
+        out.search = value;
+        break;
+    }
+  }
+
+  return out;
 }

@@ -43,14 +43,15 @@ func Classify(decl *DeclaredResource, state *StateResource, plan *PlanResource) 
 		}
 	}
 
-	if inState {
-		if state.Drifted {
-			reason := state.DriftReason
-			if reason == "" {
-				reason = "state diverges from provider"
-			}
-			return models.StatusDrifted, reason
+	if inState && state.Drifted {
+		reason := state.DriftReason
+		if reason == "" {
+			reason = "state diverges from provider"
 		}
+		return models.StatusDrifted, reason
+	}
+
+	if inState {
 		if inactive, reason := inferInactive(state.Attributes); inactive {
 			return models.StatusInactive, reason
 		}

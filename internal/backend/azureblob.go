@@ -5,12 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	"github.com/NotHarshhaa/terraview/internal/engine"
 )
 
 // AzureBlobBackend reads a Terraform state file from an Azure Blob Storage
-// container. The README labels this as 🚧 in progress; the constructor
-// validates config and the LoadState stub points at exactly where to plug in
-// github.com/Azure/azure-sdk-for-go/sdk/storage/azblob.
+// container.
 type AzureBlobBackend struct {
 	account   string
 	container string
@@ -36,7 +39,26 @@ func NewAzureBlob(cfg Config) (*AzureBlobBackend, error) {
 }
 
 func (a *AzureBlobBackend) LoadState(ctx context.Context) (io.ReadCloser, error) {
-	return nil, fmt.Errorf("azureblob backend not yet implemented: wire azblob.NewClient for https://%s.blob.core.windows.net/%s/%s", a.account, a.container, a.blob)
+	serviceURL := fmt.Sprintf("https://%s.blob.core.windows.net/", a.account)
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		return nil, fmt.Errorf("azure credentials: %w", err)
+	}
+
+	client, err := azblob.NewClient(serviceURL, cred, nil)
+	if err != nil {
+		return nil, fmt.Errorf("azure blob client: %w", err)
+	}
+
+	resp, err := client.DownloadStream(ctx, a.container, a.blob, nil)
+	if err != nil {
+		var respErr *azcore.ResponseError
+		if errors.As(err, &respErr) && respErr.StatusCode == 404 {
+			return nil, fmt.Errorf("%w: azureblob://%s/%s/%s", engine.ErrStateNotFound, a.account, a.container, a.blob)
+		}
+		return nil, fmt.Errorf("azure blob download: %w", err)
+	}
+	return resp.Body, nil
 }
 
 func (a *AzureBlobBackend) Name() string {

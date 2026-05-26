@@ -133,7 +133,7 @@ func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, errorMsgOrDefault(err, "snapshot not ready yet"))
 		return
 	}
-	writeJSON(w, http.StatusOK, snap)
+	writeJSON(w, http.StatusOK, s.withUI(snap))
 }
 
 // handleRefresh forces an out-of-band snapshot refresh. The caller blocks
@@ -150,7 +150,7 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, snap)
+	writeJSON(w, http.StatusOK, s.withUI(snap))
 }
 
 // handleEvents is a tiny Server-Sent Events stream that pushes a "refreshed"

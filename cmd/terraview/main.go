@@ -197,9 +197,15 @@ func runServe(args, positional []string) int {
 	server := api.NewServer(poller, api.Config{
 		Version: version,
 		Auth: api.AuthConfig{
-			Enabled:  cfg.Auth.Enabled,
-			Username: cfg.Auth.Username,
-			Password: cfg.Auth.Password,
+			Enabled:     cfg.Auth.Enabled,
+			Username:    cfg.Auth.Username,
+			Password:    cfg.Auth.Password,
+			AccessToken: cfg.Auth.AccessToken,
+		},
+		UI: api.UIConfig{
+			Title:          cfg.UI.Title,
+			ShowCostColumn: cfg.UI.ShowCostColumn,
+			DefaultFilter:  cfg.UI.DefaultFilter,
 		},
 		UIHandler: uiHandler,
 		Logger:    logger,

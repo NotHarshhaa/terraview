@@ -18,9 +18,10 @@ import { StatusBadge } from "./status-badge";
 
 interface ResourceRowProps {
   resource: Resource;
+  showCostColumn?: boolean;
 }
 
-export function ResourceRow({ resource }: ResourceRowProps) {
+export function ResourceRow({ resource, showCostColumn = false }: ResourceRowProps) {
   const [open, setOpen] = React.useState(false);
 
   const subtitle = [resource.type, resource.module || null]
@@ -61,7 +62,7 @@ export function ResourceRow({ resource }: ResourceRowProps) {
           {subtitle || resource.address}
         </div>
       </div>
-      {resource.monthly_cost ? (
+      {showCostColumn && resource.monthly_cost ? (
         <span className="hidden font-mono text-xs text-muted-foreground md:inline">
           ${resource.monthly_cost.toFixed(2)}/mo
         </span>

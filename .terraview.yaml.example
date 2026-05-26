@@ -56,3 +56,4 @@ auth:
   username: admin
   # password: literal-password       # prefer password_env in version control
   password_env: TV_PASSWORD
+  # access_token: secret-token       # optional static token for Bearer / SSE ?access_token=

@@ -44,12 +44,13 @@ type UI struct {
 	DefaultFilter  string `yaml:"default_filter"`
 }
 
-// Auth is the optional HTTP basic auth wrapper config.
+// Auth is the optional HTTP auth wrapper config.
 type Auth struct {
 	Enabled     bool   `yaml:"enabled"`
 	Username    string `yaml:"username"`
 	Password    string `yaml:"password"`
 	PasswordEnv string `yaml:"password_env"` // name of env var that holds the password
+	AccessToken string `yaml:"access_token"`
 }
 
 // Defaults returns a fully-populated File with built-in defaults. Used as
@@ -150,6 +151,9 @@ func applyEnv(cfg *File) {
 	}
 	if v := os.Getenv("TV_PASSWORD"); v != "" {
 		cfg.Auth.Password = v
+	}
+	if v := os.Getenv("TV_ACCESS_TOKEN"); v != "" {
+		cfg.Auth.AccessToken = v
 	}
 }
 
@@ -307,6 +311,8 @@ func assign(cfg *File, path []string, val string) error {
 		cfg.Auth.Password = val
 	case "auth.password_env":
 		cfg.Auth.PasswordEnv = val
+	case "auth.access_token":
+		cfg.Auth.AccessToken = val
 	default:
 		return fmt.Errorf("unknown config key %q", join)
 	}
