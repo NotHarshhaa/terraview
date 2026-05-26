@@ -83,7 +83,9 @@ async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(apiUrl(path), {
     ...init,
     headers: { ...headers, ...(init?.headers as Record<string, string>) },
-    credentials: "include",
+    // Same-origin (Next.js rewrites): send session cookies. Cross-origin dev
+    // calls use Bearer/query tokens instead — omit avoids CORS credential blocks.
+    credentials: API_BASE ? "omit" : "include",
     cache: "no-store",
   });
   if (!res.ok) {

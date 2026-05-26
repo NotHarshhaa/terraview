@@ -148,19 +148,40 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 </body></html>`))
 }
 
-// cors permits the dev UI on :3000 to talk to the API on :7777.
+// cors permits the dev UI on :3000 to talk to the API on :7777. When the
+// browser sends an Origin header we echo it back (required for credentialed
+// requests); wildcard "*" is only used for non-browser clients.
 func (s *Server) cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		if origin := r.Header.Get("Origin"); origin != "" && allowedCORSOrigin(origin) {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Set("Vary", "Origin")
+		} else {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func allowedCORSOrigin(origin string) bool {
+	for _, prefix := range []string{
+		"http://localhost:",
+		"http://127.0.0.1:",
+		"https://localhost:",
+		"https://127.0.0.1:",
+	} {
+		if strings.HasPrefix(origin, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // logRequests writes one line per request in a format that's easy to grep.
