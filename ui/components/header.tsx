@@ -1,8 +1,5 @@
 /**
- * Header — sticky top bar with the Terraview wordmark, backend pill, last
- * refresh timestamp and a manual refresh button. The backend pill is also a
- * link target for screenshots in the README so the deployed environment is
- * always visible at a glance.
+ * Header — sticky top bar with wordmark, backend pill, refresh and theme toggle.
  */
 
 "use client";
@@ -21,6 +18,7 @@ interface HeaderProps {
   generatedAt?: string;
   refreshing: boolean;
   onRefresh: () => void;
+  mobileFilters?: React.ReactNode;
 }
 
 export function Header({
@@ -29,6 +27,7 @@ export function Header({
   generatedAt,
   refreshing,
   onRefresh,
+  mobileFilters,
 }: HeaderProps) {
   const relative = useRelativeTime(generatedAt);
   return (
@@ -63,6 +62,7 @@ export function Header({
         </div>
 
         <div className="ml-auto flex items-center gap-2">
+          {mobileFilters}
           <ThemeToggle />
           <Button
             variant="outline"
@@ -91,27 +91,36 @@ export function Header({
   );
 }
 
-/**
- * useRelativeTime returns a short "12s ago" string and ticks once a second so
- * the timestamp stays accurate without a heavyweight date library.
- */
 function useRelativeTime(iso?: string) {
-  const [, force] = React.useReducer((n: number) => n + 1, 0);
+  const [mounted, setMounted] = React.useState(false);
+  const [relative, setRelative] = React.useState<string | null>(null);
+
   React.useEffect(() => {
-    if (!iso) return;
-    const id = setInterval(force, 1000);
+    setMounted(true);
+  }, []);
+
+  React.useEffect(() => {
+    if (!mounted || !iso) {
+      setRelative(null);
+      return;
+    }
+    const update = () => {
+      const t = new Date(iso).getTime();
+      if (Number.isNaN(t)) {
+        setRelative(null);
+        return;
+      }
+      const seconds = Math.max(0, Math.floor((Date.now() - t) / 1000));
+      if (seconds < 5) setRelative("just now");
+      else if (seconds < 60) setRelative(`${seconds}s ago`);
+      else if (seconds < 3600) setRelative(`${Math.floor(seconds / 60)}m ago`);
+      else if (seconds < 86400) setRelative(`${Math.floor(seconds / 3600)}h ago`);
+      else setRelative(`${Math.floor(seconds / 86400)}d ago`);
+    };
+    update();
+    const id = setInterval(update, 1000);
     return () => clearInterval(id);
-  }, [iso]);
-  if (!iso) return null;
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return null;
-  const seconds = Math.max(0, Math.floor((Date.now() - t) / 1000));
-  if (seconds < 5) return "just now";
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+  }, [mounted, iso]);
+
+  return relative;
 }

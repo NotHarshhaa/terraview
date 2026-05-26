@@ -113,5 +113,8 @@ func collapseActions(actions []string) PlanAction {
 	if hasCreate && hasDelete {
 		return PlanActionReplace
 	}
+	if hasDelete {
+		return PlanActionDelete
+	}
 	return PlanActionUpdate
 }

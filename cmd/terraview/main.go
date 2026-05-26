@@ -383,20 +383,23 @@ func resolveUIHandler(uiDir string, noUI bool, logger *log.Logger) http.Handler 
 	return nil
 }
 
-// uiFileServer serves a directory containing a Next.js static export. It
-// falls back to index.html for unknown paths so client-side routing works.
+// uiFileServer serves a directory containing a Next.js static export.
 func uiFileServer(root string) http.Handler {
+	root = filepath.Clean(root)
 	fs := http.FileServer(http.Dir(root))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// /api/* is handled by the mux higher up; everything else goes here.
-		path := filepath.Join(root, filepath.FromSlash(r.URL.Path))
+		clean := filepath.Clean(filepath.FromSlash(r.URL.Path))
+		if clean == "." || strings.HasPrefix(clean, ".."+string(os.PathSeparator)) || clean == ".." {
+			http.NotFound(w, r)
+			return
+		}
+		path := filepath.Join(root, clean)
 		if info, err := os.Stat(path); err == nil && !info.IsDir() {
 			fs.ServeHTTP(w, r)
 			return
 		}
-		// Try with .html appended (Next exports app routes as `/foo.html`).
 		if r.URL.Path != "/" {
-			candidate := filepath.Join(root, filepath.FromSlash(r.URL.Path)+".html")
+			candidate := path + ".html"
 			if _, err := os.Stat(candidate); err == nil {
 				http.ServeFile(w, r, candidate)
 				return

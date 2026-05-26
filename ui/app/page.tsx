@@ -1,28 +1,35 @@
 /**
- * Dashboard page — composes the header, summary bar, filter sidebar and
- * resource grid into the canonical "Provider › Service" view shown in the
- * README.
- *
- * Filter state lives here. Everything below this component is presentation —
- * pass props down, fire callbacks up.
+ * Dashboard page — composes header, summary bar, filters and resource grid.
  */
 
 "use client";
 
 import * as React from "react";
 
+import { IconFilter } from "@tabler/icons-react";
+
 import { ErrorsBanner } from "@/components/errors-banner";
 import { FilterSidebar, type Facet } from "@/components/filter-sidebar";
 import { Header } from "@/components/header";
 import { ResourceGrid } from "@/components/resource-grid";
+import { Button } from "@/components/ui/button";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SummaryBar } from "@/components/summary-bar";
 import { useSnapshot } from "@/lib/api";
 import {
-  STATUS_META,
   type Resource,
   type Status,
+  type Summary,
 } from "@/lib/types";
+
+const EMPTY_RESOURCES: Resource[] = [];
 
 export default function DashboardPage() {
   const { snapshot, loading, error, refresh, refreshing, hasLoaded } =
@@ -42,30 +49,40 @@ export default function DashboardPage() {
     new Set(),
   );
 
-  const resources = snapshot?.resources ?? [];
+  const resources = snapshot?.resources ?? EMPTY_RESOURCES;
 
-  const { providers, categories, modules } = React.useMemo(
-    () => buildFacets(resources),
-    [resources],
-  );
-
-  const filtered = React.useMemo(
+  const sidebarFiltered = React.useMemo(
     () =>
       filterResources(resources, {
         search,
-        statuses: activeStatuses,
+        statuses: new Set(),
         providers: activeProviders,
         categories: activeCategories,
         modules: activeModules,
       }),
-    [
-      resources,
-      search,
-      activeStatuses,
-      activeProviders,
-      activeCategories,
-      activeModules,
-    ],
+    [resources, search, activeProviders, activeCategories, activeModules],
+  );
+
+  const filtered = React.useMemo(
+    () =>
+      filterResources(sidebarFiltered, {
+        search: "",
+        statuses: activeStatuses,
+        providers: new Set(),
+        categories: new Set(),
+        modules: new Set(),
+      }),
+    [sidebarFiltered, activeStatuses],
+  );
+
+  const facetSummary = React.useMemo(
+    () => summariseResources(sidebarFiltered),
+    [sidebarFiltered],
+  );
+
+  const { providers, categories, modules } = React.useMemo(
+    () => buildFacets(sidebarFiltered),
+    [sidebarFiltered],
   );
 
   const toggle = <T,>(setter: React.Dispatch<React.SetStateAction<Set<T>>>) =>
@@ -78,11 +95,38 @@ export default function DashboardPage() {
       });
     };
 
+  const clearFilters = React.useCallback(() => {
+    setActiveStatuses(new Set());
+    setActiveProviders(new Set());
+    setActiveCategories(new Set());
+    setActiveModules(new Set());
+    setSearch("");
+  }, []);
+
   const activeCount =
     activeStatuses.size +
     activeProviders.size +
     activeCategories.size +
-    activeModules.size;
+    activeModules.size +
+    (search.trim() ? 1 : 0);
+
+  const filterSidebar = (
+    <FilterSidebar
+      search={search}
+      onSearchChange={setSearch}
+      providers={providers}
+      activeProviders={activeProviders}
+      onProviderToggle={toggle(setActiveProviders)}
+      categories={categories}
+      activeCategories={activeCategories}
+      onCategoryToggle={toggle(setActiveCategories)}
+      modules={modules}
+      activeModules={activeModules}
+      onModuleToggle={toggle(setActiveModules)}
+      activeCount={activeCount}
+      onClear={clearFilters}
+    />
+  );
 
   return (
     <div className="min-h-svh bg-background">
@@ -92,32 +136,31 @@ export default function DashboardPage() {
         generatedAt={snapshot?.generated_at}
         refreshing={refreshing}
         onRefresh={refresh}
+        mobileFilters={
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-1.5 lg:hidden">
+                <IconFilter className="size-3.5" aria-hidden />
+                Filters
+                {activeCount > 0 ? (
+                  <span className="font-mono text-xs">({activeCount})</span>
+                ) : null}
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-72 p-0">
+              <SheetHeader className="sr-only">
+                <SheetTitle>Filters</SheetTitle>
+              </SheetHeader>
+              {filterSidebar}
+            </SheetContent>
+          </Sheet>
+        }
       />
 
       <div className="mx-auto flex w-full max-w-7xl gap-6 px-4 py-6">
         <div className="hidden w-64 shrink-0 lg:block">
           <div className="sticky top-[60px] h-[calc(100svh-72px)]">
-            <FilterSidebar
-              search={search}
-              onSearchChange={setSearch}
-              providers={providers}
-              activeProviders={activeProviders}
-              onProviderToggle={toggle(setActiveProviders)}
-              categories={categories}
-              activeCategories={activeCategories}
-              onCategoryToggle={toggle(setActiveCategories)}
-              modules={modules}
-              activeModules={activeModules}
-              onModuleToggle={toggle(setActiveModules)}
-              activeCount={activeCount}
-              onClear={() => {
-                setActiveStatuses(new Set());
-                setActiveProviders(new Set());
-                setActiveCategories(new Set());
-                setActiveModules(new Set());
-                setSearch("");
-              }}
-            />
+            {filterSidebar}
           </div>
         </div>
 
@@ -128,19 +171,23 @@ export default function DashboardPage() {
             <ErrorState message={error} onRetry={refresh} />
           ) : snapshot ? (
             <>
+              {error ? <StaleDataBanner message={error} onRetry={refresh} /> : null}
               <SummaryBar
-                summary={snapshot.summary}
+                summary={facetSummary}
                 activeStatuses={activeStatuses}
                 onStatusToggle={toggle(setActiveStatuses)}
               />
               <ErrorsBanner errors={snapshot.errors} />
               <ResourceGrid
                 resources={filtered}
-                totalBeforeFilter={resources.length}
+                totalBeforeFilter={sidebarFiltered.length}
               />
               <footer className="pt-2 text-center text-xs text-muted-foreground">
-                <span className="font-mono">{snapshot.working_dir}</span>{" "}
-                · serving {filtered.length} of {resources.length} resources
+                <span className="font-mono">{snapshot.working_dir}</span> ·
+                showing {filtered.length} of {sidebarFiltered.length} resources
+                {sidebarFiltered.length !== resources.length
+                  ? ` (${resources.length} total)`
+                  : ""}
               </footer>
             </>
           ) : null}
@@ -160,7 +207,13 @@ function LoadingState() {
   );
 }
 
-function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+function ErrorState({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
   return (
     <div className="rounded-md border border-destructive/30 bg-destructive/5 p-6 text-sm">
       <h2 className="mb-1 font-medium text-destructive">
@@ -168,8 +221,11 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
       </h2>
       <p className="mb-3 text-muted-foreground">{message}</p>
       <p className="text-xs text-muted-foreground">
-        Make sure <code className="rounded bg-muted px-1 py-0.5">terraview serve</code> is running and reachable at{" "}
-        <code className="rounded bg-muted px-1 py-0.5">{process.env.NEXT_PUBLIC_TERRAVIEW_API ?? "the same origin"}</code>.
+        Make sure{" "}
+        <code className="rounded bg-muted px-1 py-0.5">terraview serve</code> is
+        running. In dev, the API defaults to{" "}
+        <code className="rounded bg-muted px-1 py-0.5">localhost:7777</code> via
+        Next.js rewrites.
       </p>
       <button
         type="button"
@@ -177,6 +233,30 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
         className="mt-3 rounded-md border bg-background px-3 py-1.5 text-xs hover:bg-muted"
       >
         Try again
+      </button>
+    </div>
+  );
+}
+
+function StaleDataBanner({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div
+      role="alert"
+      className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-xs text-amber-800 dark:text-amber-200"
+    >
+      <span>Refresh failed — showing cached data. {message}</span>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="underline underline-offset-2 hover:no-underline"
+      >
+        Retry
       </button>
     </div>
   );
@@ -198,11 +278,34 @@ function filterResources(resources: Resource[], f: FilterState): Resource[] {
     if (f.categories.size && !f.categories.has(r.category.service)) return false;
     if (f.modules.size && !f.modules.has(r.module || "(root)")) return false;
     if (needle) {
-      const hay = `${r.address} ${r.type} ${r.name} ${Object.values(r.tags ?? {}).join(" ")}`.toLowerCase();
+      const hay =
+        `${r.address} ${r.type} ${r.name} ${Object.values(r.tags ?? {}).join(" ")}`.toLowerCase();
       if (!hay.includes(needle)) return false;
     }
     return true;
   });
+}
+
+function summariseResources(resources: Resource[]): Summary {
+  const summary: Summary = {
+    total: 0,
+    by_status: {},
+    by_provider: {},
+    by_category: {},
+  };
+  for (const r of resources) {
+    summary.total++;
+    summary.by_status[r.status] = (summary.by_status[r.status] ?? 0) + 1;
+    if (r.category.provider) {
+      summary.by_provider[r.category.provider] =
+        (summary.by_provider[r.category.provider] ?? 0) + 1;
+      const cat = `${r.category.provider} › ${r.category.service}`;
+      summary.by_category[cat] = (summary.by_category[cat] ?? 0) + 1;
+    }
+    summary.total_monthly_cost =
+      (summary.total_monthly_cost ?? 0) + (r.monthly_cost ?? 0);
+  }
+  return summary;
 }
 
 function buildFacets(resources: Resource[]) {
@@ -217,13 +320,9 @@ function buildFacets(resources: Resource[]) {
       .map<Facet>(([value, count]) => ({ value, label: value, count }));
   };
 
-  const providers = tally((r) => r.category.provider).filter((f) => f.value);
-  const categories = tally((r) => r.category.service).filter((f) => f.value);
-  const modules = tally((r) => r.module || "(root)");
-
-  // Bonus: surface unique status labels just in case (not used directly but
-  // ensures the export stays exhaustive for future filter UIs).
-  void STATUS_META;
-
-  return { providers, categories, modules };
+  return {
+    providers: tally((r) => r.category.provider).filter((f) => f.value),
+    categories: tally((r) => r.category.service).filter((f) => f.value),
+    modules: tally((r) => r.module || "(root)"),
+  };
 }

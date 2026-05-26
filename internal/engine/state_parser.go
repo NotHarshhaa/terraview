@@ -69,7 +69,7 @@ func ParseStateJSON(r io.Reader) ([]StateResource, error) {
 	// `terraform.tfstate` on disk is the legacy {"resources":[...]} format.
 	// We try the legacy form first because that's what most backends store.
 	var legacy rawStateFile
-	if err := json.Unmarshal(raw, &legacy); err == nil && len(legacy.Resources) > 0 {
+	if err := json.Unmarshal(raw, &legacy); err == nil && legacy.Version >= 4 {
 		return convertLegacyState(legacy), nil
 	}
 
@@ -151,7 +151,7 @@ func collectShowJSONModule(raw json.RawMessage, parentAddress string, out *[]Sta
 			Type:       r.Type,
 			Name:       r.Name,
 			Module:     modName,
-			Provider:   r.ProviderName,
+			Provider:   providerNameFromTfProviderRef(r.ProviderName, r.Type),
 			Attributes: r.Values,
 			Tags:       extractTags(r.Values),
 		})

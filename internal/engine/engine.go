@@ -208,7 +208,11 @@ func mergeAndClassify(decls []DeclaredResource, states []StateResource, plans []
 func metaFromAny(addr string, d *DeclaredResource, s *StateResource, p *PlanResource) (t, name, module, provider string) {
 	switch {
 	case s != nil:
-		return s.Type, s.Name, s.Module, providerFromType(s.Type)
+		provider := s.Provider
+		if provider == "" {
+			provider = providerFromType(s.Type)
+		}
+		return s.Type, s.Name, s.Module, provider
 	case d != nil:
 		return d.Type, d.Name, d.Module, d.Provider
 	case p != nil:

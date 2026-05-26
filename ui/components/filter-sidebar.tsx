@@ -69,6 +69,7 @@ export function FilterSidebar(props: FilterSidebarProps) {
               aria-hidden
             />
             <SidebarInput
+              id="resource-search"
               value={props.search}
               onChange={(e) => props.onSearchChange(e.target.value)}
               placeholder="Search address, type, tag…"
@@ -77,7 +78,7 @@ export function FilterSidebar(props: FilterSidebarProps) {
             />
           </div>
           <div className="flex items-center justify-between px-1">
-            <Label>Filters</Label>
+            <Label htmlFor="resource-search">Filters</Label>
             {props.activeCount > 0 ? (
               <Button variant="link" size="xs" onClick={props.onClear}>
                 Clear {props.activeCount}

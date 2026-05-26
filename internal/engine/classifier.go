@@ -33,10 +33,6 @@ func Classify(decl *DeclaredResource, state *StateResource, plan *PlanResource) 
 	if inPlan {
 		switch plan.Action {
 		case PlanActionCreate:
-			if inState {
-				// Rare: replacement; treat as pending update so the UI shows movement.
-				return models.StatusPendingUpdate, "replacement planned"
-			}
 			return models.StatusPendingCreate, "create planned"
 		case PlanActionDelete:
 			return models.StatusPendingDestroy, "destroy planned"

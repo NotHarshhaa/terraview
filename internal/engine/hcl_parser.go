@@ -10,20 +10,16 @@ import (
 )
 
 // DeclaredResource is the minimal view of a Terraform `resource` block that
-// Terraview needs to know about. We deliberately do *not* parse the full HCL
-// AST: for the dashboard we only care about which addresses exist, what type
-// they are and which file/module they came from. This keeps the parser
-// dependency-free and resilient to syntax we don't fully understand.
+// Terraview needs to know about.
 type DeclaredResource struct {
-	Type     string // "aws_instance"
-	Name     string // "web_server"
-	Module   string // "//compute" or "" for root
-	File     string // absolute path of the .tf file the declaration came from
-	Provider string // "aws", derived from Type
+	Type     string
+	Name     string
+	Module   string // "//networking" or "" for root
+	File     string
+	Provider string
 }
 
-// Address returns the canonical Terraform address ("aws_instance.web_server"
-// or "module.foo.aws_instance.web_server").
+// Address returns the canonical Terraform address.
 func (d DeclaredResource) Address() string {
 	if d.Module == "" || d.Module == "//" {
 		return d.Type + "." + d.Name
@@ -36,35 +32,19 @@ func (d DeclaredResource) Address() string {
 	return strings.Join(parts, ".") + "." + d.Type + "." + d.Name
 }
 
-// resourceBlockRegex matches the first line of a Terraform `resource` block.
-// Terraform allows whitespace and either single- or double-quoted identifiers,
-// though double quotes are the canonical form. We match both for resilience.
-//
-//	resource "aws_instance" "web" {
-//	resource    "aws_instance"  "web" {
-//
-// We do not attempt to be perfect — the engine surfaces parsing errors as
-// non-fatal SnapshotErrors so a single malformed file never breaks the
-// dashboard.
 var resourceBlockRegex = regexp.MustCompile(`^\s*resource\s+["']([a-zA-Z0-9_]+)["']\s+["']([a-zA-Z0-9_\-]+)["']\s*\{`)
+var moduleBlockRegex = regexp.MustCompile(`^\s*module\s+["']([a-zA-Z0-9_\-]+)["']\s*\{`)
+var moduleSourceRegex = regexp.MustCompile(`^\s*source\s*=\s*["']([^"']+)["']`)
 
-// HCLParseResult bundles successfully parsed declarations with any per-file
-// errors so the API can surface them as warnings.
+// HCLParseResult bundles successfully parsed declarations with any per-file errors.
 type HCLParseResult struct {
 	Resources []DeclaredResource
 	Errors    []error
 }
 
-// ParseHCLDir walks the given working directory and returns every `resource`
-// block it can find in any .tf file, plus a list of non-fatal errors.
-//
-// Behaviour:
-//   - Recursive; skips .terraform/, .git/ and node_modules/.
-//   - Treats every subdirectory that contains its own .tf file(s) and is not
-//     the root as a child module, using the path relative to the root as the
-//     module name ("modules/networking" → "//modules/networking").
-//   - Ignores .tf.json files for now (rare in practice; would need a separate
-//     JSON parser).
+// ParseHCLDir walks the working directory for `resource` blocks. Module names
+// are derived from `module "name" { source = "..." }` call sites — not from
+// filesystem paths — so addresses align with Terraform state.
 func ParseHCLDir(workingDir string) HCLParseResult {
 	res := HCLParseResult{}
 
@@ -73,6 +53,9 @@ func ParseHCLDir(workingDir string) HCLParseResult {
 		res.Errors = append(res.Errors, fmt.Errorf("resolve working dir: %w", err))
 		return res
 	}
+
+	moduleDirs, modErrs := discoverModuleSources(absRoot)
+	res.Errors = append(res.Errors, modErrs...)
 
 	err = filepath.WalkDir(absRoot, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -90,7 +73,7 @@ func ParseHCLDir(workingDir string) HCLParseResult {
 			return nil
 		}
 
-		module := moduleNameFor(absRoot, path)
+		module := moduleNameFor(absRoot, path, moduleDirs)
 		decls, perr := parseHCLFile(path, module)
 		if perr != nil {
 			res.Errors = append(res.Errors, fmt.Errorf("%s: %w", path, perr))
@@ -105,25 +88,141 @@ func ParseHCLDir(workingDir string) HCLParseResult {
 	return res
 }
 
-func moduleNameFor(root, file string) string {
-	dir := filepath.Dir(file)
-	rel, err := filepath.Rel(root, dir)
+// discoverModuleSources scans all .tf files for module blocks and maps each
+// resolved source directory to its Terraform module path ("networking" or
+// "networking/vpc" for nested calls).
+func discoverModuleSources(root string) (map[string]string, []error) {
+	dirToModule := map[string]string{}
+	var errs []error
+
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(d.Name(), ".tf") {
+			return nil
+		}
+		name := filepath.Base(filepath.Dir(path))
+		if name == ".terraform" || name == ".git" || name == "node_modules" {
+			return nil
+		}
+		calls, perr := parseModuleBlocks(path)
+		if perr != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", path, perr))
+			return nil
+		}
+		fileDir := filepath.Dir(path)
+		parent := parentModulePath(fileDir, dirToModule)
+		for _, c := range calls {
+			srcAbs, err := resolveModuleSource(fileDir, c.source)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("%s: module %q: %w", path, c.name, err))
+				continue
+			}
+			full := c.name
+			if parent != "" {
+				full = parent + "/" + c.name
+			}
+			dirToModule[srcAbs] = full
+		}
+		return nil
+	})
+
+	return dirToModule, errs
+}
+
+type moduleCall struct {
+	name   string
+	source string
+}
+
+func parseModuleBlocks(path string) ([]moduleCall, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	var out []moduleCall
+	inBlock := false
+	var current string
+
+	for scanner.Scan() {
+		line := stripLineComments(scanner.Text())
+		if !inBlock {
+			if m := moduleBlockRegex.FindStringSubmatch(line); m != nil {
+				inBlock = true
+				current = m[1]
+			}
+			continue
+		}
+		if m := moduleSourceRegex.FindStringSubmatch(line); m != nil {
+			out = append(out, moduleCall{name: current, source: m[1]})
+			inBlock = false
+			current = ""
+			continue
+		}
+		if strings.Contains(line, "}") {
+			inBlock = false
+			current = ""
+		}
+	}
+	return out, scanner.Err()
+}
+
+func resolveModuleSource(fromDir, source string) (string, error) {
+	if strings.HasPrefix(source, "git::") || strings.HasPrefix(source, "github.com/") || strings.HasPrefix(source, "bitbucket.org/") {
+		return "", fmt.Errorf("remote module source not supported for autodiscovery: %q", source)
+	}
+	abs := filepath.Clean(filepath.Join(fromDir, source))
+	return filepath.Abs(abs)
+}
+
+func parentModulePath(dir string, dirToModule map[string]string) string {
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return ""
+	}
+	best := ""
+	bestLen := -1
+	for srcDir, modPath := range dirToModule {
+		if absDir == srcDir || strings.HasPrefix(absDir, srcDir+string(os.PathSeparator)) {
+			if len(srcDir) > bestLen {
+				bestLen = len(srcDir)
+				best = modPath
+			}
+		}
+	}
+	return best
+}
+
+func moduleNameFor(root, file string, dirToModule map[string]string) string {
+	absFileDir, err := filepath.Abs(filepath.Dir(file))
+	if err != nil {
+		return ""
+	}
+	if mod, ok := dirToModule[absFileDir]; ok {
+		return "//" + mod
+	}
+	best := ""
+	bestLen := -1
+	for srcDir, modPath := range dirToModule {
+		if absFileDir == srcDir || strings.HasPrefix(absFileDir, srcDir+string(os.PathSeparator)) {
+			if len(srcDir) > bestLen {
+				bestLen = len(srcDir)
+				best = modPath
+			}
+		}
+	}
+	if best != "" {
+		return "//" + best
+	}
+	rel, err := filepath.Rel(root, absFileDir)
 	if err != nil || rel == "." {
 		return ""
 	}
-	// Normalise path separators so "modules\\networking" on Windows still
-	// becomes "//modules/networking" in the UI.
-	rel = filepath.ToSlash(rel)
-	return "//" + rel
+	// Unknown subdirectory — treat as root so we don't invent wrong module.* paths.
+	return ""
 }
 
-// parseHCLFile is a deliberately small line-based scanner. It is *not* a real
-// HCL parser; it only finds top-level `resource "type" "name" {` lines, which
-// is enough for autodiscovery. Anything inside the block (the body) is
-// ignored. Nested resource blocks aren't allowed by Terraform so we don't
-// need to track depth for resource detection — but we still skip strings and
-// line comments to avoid spurious matches inside heredocs and `#`/`//`
-// comments.
 func parseHCLFile(path, module string) ([]DeclaredResource, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -138,44 +237,59 @@ func parseHCLFile(path, module string) ([]DeclaredResource, error) {
 	inBlockComment := false
 
 	for scanner.Scan() {
-		raw := scanner.Text()
-		line := raw
-
-		if inBlockComment {
-			if idx := strings.Index(line, "*/"); idx >= 0 {
-				line = line[idx+2:]
-				inBlockComment = false
-			} else {
-				continue
-			}
-		}
-		if idx := strings.Index(line, "/*"); idx >= 0 {
-			before := line[:idx]
-			line = before
-			inBlockComment = !strings.Contains(line, "*/")
-		}
-		if idx := strings.Index(line, "#"); idx >= 0 {
-			line = line[:idx]
-		}
-		if idx := strings.Index(line, "//"); idx >= 0 {
-			line = line[:idx]
-		}
+		line := stripBlockComments(scanner.Text(), &inBlockComment)
+		line = stripLineComments(line)
 
 		m := resourceBlockRegex.FindStringSubmatch(line)
 		if m == nil {
 			continue
 		}
-		t, n := m[1], m[2]
 		out = append(out, DeclaredResource{
-			Type:     t,
-			Name:     n,
+			Type:     m[1],
+			Name:     m[2],
 			Module:   module,
 			File:     path,
-			Provider: providerFromType(t),
+			Provider: providerFromType(m[1]),
 		})
 	}
 	if err := scanner.Err(); err != nil {
 		return out, err
 	}
 	return out, nil
+}
+
+func stripLineComments(line string) string {
+	if idx := strings.Index(line, "#"); idx >= 0 {
+		line = line[:idx]
+	}
+	if idx := strings.Index(line, "//"); idx >= 0 {
+		line = line[:idx]
+	}
+	return line
+}
+
+// stripBlockComments removes /* */ comments, including single-line blocks.
+func stripBlockComments(line string, inBlock *bool) string {
+	for {
+		if *inBlock {
+			if idx := strings.Index(line, "*/"); idx >= 0 {
+				line = line[idx+2:]
+				*inBlock = false
+				continue
+			}
+			return ""
+		}
+		idx := strings.Index(line, "/*")
+		if idx < 0 {
+			return line
+		}
+		before := line[:idx]
+		rest := line[idx+2:]
+		if end := strings.Index(rest, "*/"); end >= 0 {
+			line = before + rest[end+2:]
+			continue
+		}
+		*inBlock = true
+		return before
+	}
 }

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"sort"
 	"strings"
 	"time"
 
@@ -83,7 +82,7 @@ func (s *Server) handleResources(w http.ResponseWriter, r *http.Request) {
 		if len(providers) > 0 && !providers[strings.ToLower(res.Category.Provider)] {
 			continue
 		}
-		if len(modules) > 0 && !modules[res.Module] {
+		if len(modules) > 0 && !matchModuleFilter(res.Module, modules) {
 			continue
 		}
 		if len(categories) > 0 && !categories[res.Category.Service] {
@@ -108,9 +107,9 @@ func (s *Server) handleResources(w http.ResponseWriter, r *http.Request) {
 // handleStatus is a tiny shape designed for badges and CI status comments:
 // just the counts and a human-readable headline.
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
-	snap, _ := s.poller.Snapshot()
+	snap, err := s.poller.Snapshot()
 	if snap == nil {
-		writeError(w, http.StatusServiceUnavailable, "snapshot not ready yet")
+		writeError(w, http.StatusServiceUnavailable, errorMsgOrDefault(err, "snapshot not ready yet"))
 		return
 	}
 
@@ -192,11 +191,13 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// matchesSearch performs a single case-insensitive substring match against
-// the address, type and tag values. We deliberately don't search attributes
-// (too noisy) or modules (use the module filter for that).
+// matchesSearch performs a case-insensitive substring match against name,
+// address, type and tag values.
 func matchesSearch(r models.Resource, needle string) bool {
 	if needle == "" {
+		return true
+	}
+	if strings.Contains(strings.ToLower(r.Name), needle) {
 		return true
 	}
 	if strings.Contains(strings.ToLower(r.Address), needle) {
@@ -211,6 +212,20 @@ func matchesSearch(r models.Resource, needle string) bool {
 		}
 	}
 	return false
+}
+
+func moduleFilterValue(module string) string {
+	if module == "" {
+		return "(root)"
+	}
+	return module
+}
+
+func matchModuleFilter(module string, allowed map[string]bool) bool {
+	if allowed[module] {
+		return true
+	}
+	return allowed[moduleFilterValue(module)]
 }
 
 func splitCSVSet(s string) map[string]bool {
@@ -256,6 +271,5 @@ func buildHeadline(s models.Summary) string {
 	if len(parts) == 0 {
 		return "No managed resources yet"
 	}
-	sort.Strings(parts) // stable order so tests + screenshots don't flake
 	return strings.Join(parts, " · ")
 }

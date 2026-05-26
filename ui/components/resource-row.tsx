@@ -28,11 +28,47 @@ export function ResourceRow({ resource }: ResourceRowProps) {
     .join(" · ");
 
   const attrSummary = React.useMemo(() => summariseAttributes(resource), [resource]);
+  const hasLastChanged =
+    !!resource.last_changed &&
+    !resource.last_changed.startsWith("0001-01-01");
   const hasDetails =
     !!resource.status_reason ||
     !!resource.attributes ||
-    !!resource.tags ||
-    !!resource.last_changed;
+    (resource.tags && Object.keys(resource.tags).length > 0) ||
+    hasLastChanged;
+
+  const rowClassName = "flex w-full items-center gap-3 px-3 py-2 text-left";
+  const rowBody = (
+    <>
+      <IconChevronRight
+        className={cn(
+          "size-3.5 shrink-0 text-muted-foreground/60 transition-transform",
+          hasDetails ? "" : "opacity-0",
+          open && "rotate-90",
+        )}
+        aria-hidden
+      />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 text-sm">
+          <span className="truncate font-medium">{resource.name}</span>
+          {attrSummary ? (
+            <span className="hidden truncate font-mono text-xs text-muted-foreground sm:inline">
+              {attrSummary}
+            </span>
+          ) : null}
+        </div>
+        <div className="truncate font-mono text-xs text-muted-foreground/80">
+          {subtitle || resource.address}
+        </div>
+      </div>
+      {resource.monthly_cost ? (
+        <span className="hidden font-mono text-xs text-muted-foreground md:inline">
+          ${resource.monthly_cost.toFixed(2)}/mo
+        </span>
+      ) : null}
+      <StatusBadge status={resource.status} />
+    </>
+  );
 
   return (
     <div
@@ -41,40 +77,18 @@ export function ResourceRow({ resource }: ResourceRowProps) {
         open ? "bg-muted/40" : "hover:bg-muted/30",
       )}
     >
-      <button
-        type="button"
-        onClick={() => hasDetails && setOpen((v) => !v)}
-        className="flex w-full items-center gap-3 px-3 py-2 text-left"
-        aria-expanded={hasDetails ? open : undefined}
-      >
-        <IconChevronRight
-          className={cn(
-            "size-3.5 shrink-0 text-muted-foreground/60 transition-transform",
-            hasDetails ? "" : "opacity-0",
-            open && "rotate-90",
-          )}
-          aria-hidden
-        />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 text-sm">
-            <span className="truncate font-medium">{resource.name}</span>
-            {attrSummary ? (
-              <span className="hidden truncate font-mono text-xs text-muted-foreground sm:inline">
-                {attrSummary}
-              </span>
-            ) : null}
-          </div>
-          <div className="truncate font-mono text-xs text-muted-foreground/80">
-            {subtitle || resource.address}
-          </div>
-        </div>
-        {resource.monthly_cost ? (
-          <span className="hidden font-mono text-xs text-muted-foreground md:inline">
-            ${resource.monthly_cost.toFixed(2)}/mo
-          </span>
-        ) : null}
-        <StatusBadge status={resource.status} />
-      </button>
+      {hasDetails ? (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className={rowClassName}
+          aria-expanded={open}
+        >
+          {rowBody}
+        </button>
+      ) : (
+        <div className={rowClassName}>{rowBody}</div>
+      )}
 
       {open && hasDetails ? (
         <div className="space-y-3 border-t bg-background/40 px-9 py-3 text-xs">
@@ -101,7 +115,7 @@ export function ResourceRow({ resource }: ResourceRowProps) {
               ))}
             </div>
           ) : null}
-          {resource.last_changed && resource.last_changed !== "0001-01-01T00:00:00Z" ? (
+          {resource.last_changed && hasLastChanged ? (
             <KV k="Last changed" v={new Date(resource.last_changed).toLocaleString()} />
           ) : null}
         </div>

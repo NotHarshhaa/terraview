@@ -16,22 +16,18 @@ import (
 // Poller owns the latest models.Snapshot and refreshes it on a fixed
 // interval. It also exposes a manual Refresh() so the UI can force an
 // out-of-band reload.
-//
-// Concurrency model: a single goroutine writes to `current` under a Mutex;
-// readers (HTTP handlers) take a read lock and copy the pointer out. The
-// snapshot itself is treated as immutable once published — never mutate
-// fields after assigning.
 type Poller struct {
 	engine  *engine.Engine
 	options engine.Options
 	period  time.Duration
 	logger  *log.Logger
 
-	mu       sync.RWMutex
-	current  *models.Snapshot
-	lastErr  error
-	subs     map[chan struct{}]struct{}
-	subsLock sync.Mutex
+	mu        sync.RWMutex
+	refreshMu sync.Mutex // serialises engine.Refresh calls
+	current   *models.Snapshot
+	lastErr   error
+	subs      map[chan struct{}]struct{}
+	subsLock  sync.Mutex
 }
 
 // NewPoller returns a poller that uses eng to produce snapshots based on
@@ -54,7 +50,6 @@ func NewPoller(eng *engine.Engine, opts engine.Options, period time.Duration, lo
 }
 
 // Run blocks until ctx is cancelled, refreshing the snapshot on every tick.
-// An initial refresh happens immediately so the API is usable from request 1.
 func (p *Poller) Run(ctx context.Context) {
 	p.refreshOnce(ctx)
 
@@ -71,12 +66,14 @@ func (p *Poller) Run(ctx context.Context) {
 }
 
 // Refresh forces an immediate refresh and returns the resulting snapshot.
-// Useful for the "Refresh now" button in the UI.
 func (p *Poller) Refresh(ctx context.Context) (*models.Snapshot, error) {
 	return p.refreshOnce(ctx)
 }
 
 func (p *Poller) refreshOnce(ctx context.Context) (*models.Snapshot, error) {
+	p.refreshMu.Lock()
+	defer p.refreshMu.Unlock()
+
 	start := time.Now()
 	snap, err := p.engine.Refresh(ctx, p.options)
 	took := time.Since(start)
@@ -92,22 +89,22 @@ func (p *Poller) refreshOnce(ctx context.Context) (*models.Snapshot, error) {
 	}
 	p.mu.Unlock()
 
-	p.broadcast()
+	if err == nil {
+		p.broadcast()
+	}
 	return snap, err
 }
 
 // Snapshot returns the most recent snapshot and the most recent fatal error.
-// The snapshot may be nil if the first refresh hasn't completed yet.
 func (p *Poller) Snapshot() (*models.Snapshot, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.current, p.lastErr
 }
 
-// Subscribe returns a channel that receives a struct{} every time the
-// snapshot is refreshed. Unsubscribe via the returned cancel function. This
-// is wired to the /api/events SSE endpoint so the UI can push-update instead
-// of polling.
+// Subscribe returns a channel notified on each successful refresh.
+// Do not close subscriber channels — the unsubscribe func removes them from
+// the registry so a closed channel never spins the SSE handler.
 func (p *Poller) Subscribe() (<-chan struct{}, func()) {
 	ch := make(chan struct{}, 1)
 	p.subsLock.Lock()
@@ -117,7 +114,6 @@ func (p *Poller) Subscribe() (<-chan struct{}, func()) {
 		p.subsLock.Lock()
 		delete(p.subs, ch)
 		p.subsLock.Unlock()
-		close(ch)
 	}
 	return ch, cancel
 }
@@ -129,8 +125,6 @@ func (p *Poller) broadcast() {
 		select {
 		case ch <- struct{}{}:
 		default:
-			// Drop if the subscriber is slow; they'll see the latest snapshot
-			// on the next event anyway.
 		}
 	}
 }

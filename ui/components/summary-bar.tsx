@@ -60,6 +60,7 @@ export function SummaryBar({
                 : "opacity-80 hover:opacity-100 hover:shadow-sm"
             )}
             aria-pressed={active}
+            aria-label={`Filter by ${meta.label}, ${count} resources`}
             title={meta.description}
           >
             <span className={cn("size-1.5 rounded-full", meta.dot)} aria-hidden />
