@@ -141,9 +141,12 @@ make test         # go test ./...
 
 ```bash
 docker compose up --build
-# or
+# or pull the published image:
+docker pull ghcr.io/notharshhaa/terraview:latest
 docker run -p 7777:7777 -v "$(pwd):/workspace" ghcr.io/notharshhaa/terraview:latest
 ```
+
+Images are built and published to [GHCR](https://github.com/NotHarshhaa/terraview/pkgs/container/terraview) on pushes to `master` and version tags (`v*`).
 
 ### CI / PR comments
 
