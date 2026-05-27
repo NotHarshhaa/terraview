@@ -118,9 +118,37 @@ export function buildFacets(resources: Resource[]) {
     tagFacets.push({ value, label: value, count });
   }
 
+  const serviceCounts = new Map<string, number>();
+  const serviceProviders = new Map<string, Map<string, number>>();
+  for (const r of resources) {
+    const service = r.category.service;
+    if (!service) continue;
+    serviceCounts.set(service, (serviceCounts.get(service) ?? 0) + 1);
+    const byProvider =
+      serviceProviders.get(service) ?? new Map<string, number>();
+    byProvider.set(
+      r.category.provider,
+      (byProvider.get(r.category.provider) ?? 0) + 1,
+    );
+    serviceProviders.set(service, byProvider);
+  }
+
+  const categories: Facet[] = [...serviceCounts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([value, count]) => {
+      const providers = serviceProviders.get(value);
+      let iconProvider: string | undefined;
+      if (providers?.size) {
+        iconProvider = [...providers.entries()].sort(
+          (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
+        )[0][0];
+      }
+      return { value, label: value, count, iconProvider };
+    });
+
   return {
     providers: tally((r) => r.category.provider),
-    categories: tally((r) => r.category.service),
+    categories,
     modules: tally((r) => r.module || "(root)"),
     tags: tagFacets.slice(0, 24),
   };

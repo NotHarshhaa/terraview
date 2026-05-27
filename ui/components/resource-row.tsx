@@ -14,6 +14,7 @@ import { IconChevronRight, IconInfoCircle } from "@tabler/icons-react";
 
 import { CopyButton, CopyText } from "@/components/copy-button";
 import { Button } from "@/components/ui/button";
+import { CloudResourceIcon } from "@/lib/cloud-icons";
 import { cn } from "@/lib/utils";
 import { resourceDomId } from "@/lib/filters";
 import { type Resource, PLAN_ACTION_META } from "@/lib/types";
@@ -68,6 +69,12 @@ export function ResourceRow({
       />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 text-sm">
+          <CloudResourceIcon
+            provider={resource.category.provider}
+            service={resource.category.service}
+            resourceType={resource.type}
+            className="size-4"
+          />
           <span className="truncate font-medium">{resource.name}</span>
           {resource.plan_action ? (
             <span className="hidden rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground sm:inline">

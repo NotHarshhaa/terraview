@@ -18,6 +18,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { useToast } from "@/components/toast-provider";
+import { CloudResourceIcon } from "@/lib/cloud-icons";
 import { type Resource, PLAN_ACTION_META } from "@/lib/types";
 
 interface ResourceDetailSheetProps {
@@ -45,7 +46,15 @@ export function ResourceDetailSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-md">
         <SheetHeader>
-          <SheetTitle className="text-left">{resource.name}</SheetTitle>
+          <div className="flex items-center gap-2 text-left">
+            <CloudResourceIcon
+              provider={resource.category.provider}
+              service={resource.category.service}
+              resourceType={resource.type}
+              className="size-6"
+            />
+            <SheetTitle className="text-left">{resource.name}</SheetTitle>
+          </div>
         </SheetHeader>
 
         <div className="mt-4 space-y-5 text-sm">

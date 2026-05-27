@@ -6,18 +6,11 @@
 
 import * as React from "react";
 
-import {
-  IconBrandAws,
-  IconBrandGoogle,
-  IconBrandAzure,
-  IconShip,
-  IconCloud,
-  IconFolderOpen,
-  IconChevronRight,
-} from "@tabler/icons-react";
+import { IconFolderOpen, IconChevronRight } from "@tabler/icons-react";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { CloudServiceIcon } from "@/lib/cloud-icons";
 import { type GroupByMode } from "@/lib/filters";
 import { type Resource } from "@/lib/types";
 import type { Density } from "@/lib/views";
@@ -126,7 +119,11 @@ export function ResourceGrid({
                   </>
                 ) : (
                   <>
-                    <ProviderIcon provider={group.provider} />
+                    <CloudServiceIcon
+                      provider={group.provider}
+                      service={group.service}
+                      className="size-5"
+                    />
                     <span>{group.provider}</span>
                     <span className="text-muted-foreground">›</span>
                     <span>{group.service}</span>
@@ -155,22 +152,6 @@ export function ResourceGrid({
       })}
     </div>
   );
-}
-
-function ProviderIcon({ provider }: { provider: string }) {
-  const className = "size-4 text-muted-foreground";
-  switch (provider.toLowerCase()) {
-    case "aws":
-      return <IconBrandAws className={className} aria-hidden />;
-    case "gcp":
-      return <IconBrandGoogle className={className} aria-hidden />;
-    case "azure":
-      return <IconBrandAzure className={className} aria-hidden />;
-    case "kubernetes":
-      return <IconShip className={className} aria-hidden />;
-    default:
-      return <IconCloud className={className} aria-hidden />;
-  }
 }
 
 function groupByCategory(resources: Resource[]): CategoryGroup[] {

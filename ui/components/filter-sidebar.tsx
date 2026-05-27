@@ -29,6 +29,7 @@ import {
   SidebarProvider,
   SidebarSeparator,
 } from "@/components/ui/sidebar";
+import { CloudServiceIcon } from "@/lib/cloud-icons";
 import { QUICK_PRESETS } from "@/lib/views";
 import type { SavedView } from "@/lib/saved-views";
 
@@ -36,6 +37,8 @@ export interface Facet {
   value: string;
   label: string;
   count: number;
+  /** Dominant provider for category facets (drives service icon). */
+  iconProvider?: string;
 }
 
 interface FilterSidebarProps {
@@ -171,6 +174,7 @@ export function FilterSidebar(props: FilterSidebarProps) {
             facets={props.providers}
             active={props.activeProviders}
             onToggle={props.onProviderToggle}
+            iconMode="provider"
           />
           <SidebarSeparator />
           <FacetGroup
@@ -179,6 +183,7 @@ export function FilterSidebar(props: FilterSidebarProps) {
             facets={props.categories}
             active={props.activeCategories}
             onToggle={props.onCategoryToggle}
+            iconMode="category"
           />
           <SidebarSeparator />
           <FacetGroup
@@ -215,6 +220,7 @@ interface FacetGroupProps {
   active: Set<string>;
   onToggle: (value: string) => void;
   emptyLabel?: string;
+  iconMode?: "provider" | "category";
 }
 
 function FacetGroup({
@@ -224,6 +230,7 @@ function FacetGroup({
   active,
   onToggle,
   emptyLabel = "Nothing yet",
+  iconMode,
 }: FacetGroupProps) {
   return (
     <SidebarGroup>
@@ -243,6 +250,15 @@ function FacetGroup({
                   onClick={() => onToggle(f.value)}
                   aria-pressed={active.has(f.value)}
                 >
+                  {iconMode === "provider" ? (
+                    <CloudServiceIcon provider={f.value} className="size-4" />
+                  ) : iconMode === "category" ? (
+                    <CloudServiceIcon
+                      provider={f.iconProvider ?? "AWS"}
+                      service={f.value}
+                      className="size-4"
+                    />
+                  ) : null}
                   <span className="truncate">{f.label}</span>
                   <SidebarMenuBadge>{f.count}</SidebarMenuBadge>
                 </SidebarMenuButton>

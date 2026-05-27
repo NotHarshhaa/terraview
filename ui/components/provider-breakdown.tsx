@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { CloudServiceIcon } from "@/lib/cloud-icons";
 import type { Summary } from "@/lib/types";
 
 interface ProviderBreakdownProps {
@@ -46,6 +47,7 @@ export function ProviderBreakdown({
               aria-pressed={active}
               aria-label={`Filter by ${provider}, ${count} resources`}
             >
+              <CloudServiceIcon provider={provider} className="size-3.5" />
               <span className="tabular-nums">{count}</span>
               {provider}
             </Button>

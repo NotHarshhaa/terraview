@@ -73,6 +73,7 @@ Terraview reads your Terraform project — `.tf` files, state backend, and optio
 - **CI headline in header** — live status summary from `/api/status`
 - **Tag filter from detail** — click a tag in the detail sheet to filter the grid
 - **Markdown export** — download filtered resources as a Markdown report
+- **Cloud service icons** — official AWS/GCP/Azure SVGs via `@thesvg/cli` (group headers, rows, provider chips)
 - **Deep links** — `#resource=aws_instance.web` opens the detail panel
 - **Command palette** — `Ctrl+K` / `⌘K` to jump to any resource
 - **Keyboard shortcuts** — `/` search, `r` refresh, `Esc` clear filters, `?` help
