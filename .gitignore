@@ -19,3 +19,10 @@ ui/.turbo/
 .vscode/
 .idea/
 *.swp
+
+# Local clone of the separate GitHub Action repo (has its own .git)
+terraview-action/
+
+# Local CI smoke-test artefacts
+terraview-report.json
+terraview-report.html

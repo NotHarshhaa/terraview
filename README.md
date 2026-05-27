@@ -9,6 +9,8 @@
    ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝  ╚═══╝  ╚═╝╚══════╝ ╚══╝╚══╝
 ```
 
+<img src="./public/banner.png" alt="Terraview — Infrastructure Status dashboard" width="900" />
+
 **A self-hostable, git-native dashboard for Terraform resource status.**  
 Parse HCL + state (+ optional plan), classify every resource, and browse it in a live web UI.
 
@@ -153,13 +155,47 @@ Images are built and published to [GHCR](https://github.com/NotHarshhaa/terravie
 
 ### CI / PR comments
 
+Use the published **[Terraview Status Check](https://github.com/NotHarshhaa/terraview-action)** GitHub Action (Marketplace) or the CLI directly.
+
+**GitHub Actions:**
+
+```yaml
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  terraview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: NotHarshhaa/terraview-action@v1
+        with:
+          working-directory: ./infra
+          mode: status-check          # also: drift-gate, destroy-guard, summary-report
+          plan-file: ./plan.json
+          # backend: s3
+```
+
+| Mode | Behavior |
+|---|---|
+| `status-check` | Post/update PR comment with resource table (read-only) |
+| `drift-gate` | Fail when drift is detected (exit 2) |
+| `destroy-guard` | Fail when any `pending_destroy` resources exist |
+| `summary-report` | Write JSON/HTML report files for pipeline artifacts |
+
+See the [terraview-action README](https://github.com/NotHarshhaa/terraview-action) for full inputs and workflow examples.
+
+**CLI-only CI** (no Action wrapper):
+
 ```bash
 terraview status ./infra --format markdown
 terraview status ./infra --plan-file ./plan.json   # includes pending + drift
 # Exit 2 if any resource is drifted
 ```
 
-Example GitHub Actions workflow — see [`.terraview.yaml.example`](.terraview.yaml.example) and wire `terraview status` or a future action.
+See [`.terraview.yaml.example`](.terraview.yaml.example).
 
 ---
 
@@ -254,26 +290,6 @@ The UI stores credentials in `sessionStorage` and shows a login form on `401`.
 | Google Cloud Storage | Supported | Application Default Credentials |
 | Azure Blob Storage | Supported | `DefaultAzureCredential` |
 | Terraform Cloud / HCP | Supported | HTTP API; set `TFE_TOKEN` or `backend.token` |
-
----
-
-## Project layout
-
-```
-terraview/
-├── cmd/terraview/          CLI (serve, status, version)
-├── internal/
-│   ├── api/                HTTP server, SSE, auth, handlers
-│   ├── backend/            State adapters (local, s3, gcs, azure, tfc)
-│   ├── config/             .terraview.yaml loader
-│   ├── engine/             HCL/state/plan parsers, classifier
-│   └── models/             Shared API types
-├── ui/                     Next.js dashboard
-├── testdata/sample-project/ Demo Terraform project
-├── Dockerfile
-├── docker-compose.yml
-└── Makefile
-```
 
 ---
 
