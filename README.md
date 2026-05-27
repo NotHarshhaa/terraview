@@ -146,7 +146,10 @@ docker pull ghcr.io/notharshhaa/terraview:latest
 docker run -p 7777:7777 -v "$(pwd):/workspace" ghcr.io/notharshhaa/terraview:latest
 ```
 
-Images are built and published to [GHCR](https://github.com/NotHarshhaa/terraview/pkgs/container/terraview) on pushes to `master` and version tags (`v*`).
+Images are built and published to [GHCR](https://github.com/NotHarshhaa/terraview/pkgs/container/terraview) when you:
+
+- **Create a version tag** — e.g. `git tag v0.1.0 && git push origin v0.1.0` (publishes `v0.1.0`, `0.1.0`, `0.1`, and `latest`)
+- **Run the workflow manually** — Actions → *Publish Docker image* → *Run workflow* (publishes `sha-<commit>`; optionally check *Also tag as latest*)
 
 ### CI / PR comments
 

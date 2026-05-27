@@ -1,9 +1,5 @@
 /**
  * ResourceRow — one row in the dashboard grid.
- *
- * Shows: name + module path on the left, a tiny attribute strip in the middle
- * (instance_type, engine, region, ...), and the status badge on the right. The
- * row expands on click to show the full attribute / tag bag.
  */
 
 "use client";
@@ -12,14 +8,21 @@ import * as React from "react";
 
 import { IconChevronRight, IconInfoCircle } from "@tabler/icons-react";
 
-import { CopyButton, CopyText } from "@/components/copy-button";
+import { CopyText } from "@/components/copy-button";
+import { StatusBadge } from "@/components/status-badge";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { CloudResourceIcon } from "@/lib/cloud-icons";
-import { cn } from "@/lib/utils";
 import { resourceDomId } from "@/lib/filters";
 import { type Resource, PLAN_ACTION_META } from "@/lib/types";
 import type { Density } from "@/lib/views";
-import { StatusBadge } from "./status-badge";
+import { cn } from "@/lib/utils";
 
 interface ResourceRowProps {
   resource: Resource;
@@ -52,49 +55,46 @@ export function ResourceRow({
     (resource.tags && Object.keys(resource.tags).length > 0) ||
     hasLastChanged;
 
-  const rowClassName = cn(
-    "flex w-full items-center gap-3 px-3 text-left",
-    density === "compact" ? "py-1.5" : "py-2",
-  );
+  const rowPadding = density === "compact" ? "py-1.5" : "py-2.5";
 
   const mainContent = (
     <>
       <IconChevronRight
         className={cn(
-          "size-3.5 shrink-0 text-muted-foreground/60 transition-transform",
+          "size-3.5 shrink-0 text-muted-foreground transition-transform",
           hasDetails ? "" : "opacity-0",
           open && "rotate-90",
         )}
         aria-hidden
       />
+      <CloudResourceIcon
+        provider={resource.category.provider}
+        service={resource.category.service}
+        resourceType={resource.type}
+        className="size-4 shrink-0"
+      />
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 text-sm">
-          <CloudResourceIcon
-            provider={resource.category.provider}
-            service={resource.category.service}
-            resourceType={resource.type}
-            className="size-4"
-          />
-          <span className="truncate font-medium">{resource.name}</span>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <span className="truncate text-sm font-medium">{resource.name}</span>
           {resource.plan_action ? (
-            <span className="hidden rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground sm:inline">
+            <Badge variant="outline" className="hidden normal-case sm:inline-flex">
               {PLAN_ACTION_META[resource.plan_action]?.label ?? resource.plan_action}
-            </span>
+            </Badge>
           ) : null}
           {attrSummary ? (
-            <span className="hidden truncate font-mono text-xs text-muted-foreground sm:inline">
+            <span className="hidden truncate font-mono text-[11px] text-muted-foreground md:inline">
               {attrSummary}
             </span>
           ) : null}
         </div>
-        <div className="truncate font-mono text-xs text-muted-foreground/80">
+        <p className="truncate font-mono text-[11px] text-muted-foreground">
           {subtitle || resource.address}
-        </div>
+        </p>
       </div>
       {showCostColumn && resource.monthly_cost ? (
-        <span className="hidden font-mono text-xs text-muted-foreground md:inline">
+        <Badge variant="ghost" className="hidden shrink-0 font-mono normal-case md:inline-flex">
           ${resource.monthly_cost.toFixed(2)}/mo
-        </span>
+        </Badge>
       ) : null}
     </>
   );
@@ -103,87 +103,152 @@ export function ResourceRow({
     <div
       id={resourceDomId(resource.address)}
       className={cn(
-        "group scroll-mt-24 rounded-md border border-transparent transition-shadow",
-        open ? "bg-muted/40" : "hover:bg-muted/30",
+        "group scroll-mt-24 bg-background transition-colors",
+        open && "bg-muted/20",
       )}
     >
-      <div className={rowClassName}>
+      <div
+        className={cn(
+          "flex items-center gap-2 px-3",
+          rowPadding,
+          !open && "hover:bg-muted/30",
+        )}
+      >
         {hasDetails ? (
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
             onDoubleClick={() => onViewDetails?.(resource)}
-            className="flex min-w-0 flex-1 items-center gap-3 text-left"
+            className="flex min-w-0 flex-1 items-center gap-2 text-left"
             aria-expanded={open}
           >
             {mainContent}
           </button>
         ) : (
-          <div className="flex min-w-0 flex-1 items-center gap-3">{mainContent}</div>
+          <div className="flex min-w-0 flex-1 items-center gap-2">{mainContent}</div>
         )}
-        {onViewDetails ? (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="shrink-0 opacity-0 group-hover:opacity-100"
-            onClick={() => onViewDetails(resource)}
-            aria-label="View details"
-            title="View details"
-          >
-            <IconInfoCircle className="size-3.5" />
-          </Button>
-        ) : null}
-        <StatusBadge status={resource.status} className="shrink-0" />
+
+        <div className="flex shrink-0 items-center gap-1">
+          {onViewDetails ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="opacity-0 group-hover:opacity-100"
+                  onClick={() => onViewDetails(resource)}
+                  aria-label="View details"
+                >
+                  <IconInfoCircle className="size-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>View details</TooltipContent>
+            </Tooltip>
+          ) : null}
+          <StatusBadge status={resource.status} className="shrink-0" />
+        </div>
       </div>
 
       {open && hasDetails ? (
-        <div className="space-y-3 border-t bg-background/40 px-9 py-3 text-xs">
-          <CopyText value={resource.address} mono className="text-muted-foreground/80" />
-          {resource.status_reason ? (
-            <KV k="Why" v={resource.status_reason} />
-          ) : null}
-          {resource.drift_attributes && resource.drift_attributes.length > 0 ? (
-            <KV k="Drift" v={resource.drift_attributes.join(", ")} mono />
-          ) : null}
-          {resource.attributes
-            ? Object.entries(resource.attributes).map(([k, v]) => (
-                <KV key={k} k={k} v={v} mono />
-              ))
-            : null}
-          {resource.tags && Object.keys(resource.tags).length > 0 ? (
-            <div className="flex flex-wrap gap-1">
-              {Object.entries(resource.tags).map(([k, v]) => (
-                <span
-                  key={k}
-                  className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
-                >
-                  {k}={v}
-                </span>
-              ))}
-            </div>
-          ) : null}
-          {resource.last_changed && hasLastChanged ? (
-            <KV k="Last changed" v={new Date(resource.last_changed).toLocaleString()} />
-          ) : null}
-        </div>
+        <>
+          <Separator />
+          <div className="space-y-3 bg-muted/10 px-3 py-3 pl-10 text-xs">
+            <CopyText
+              value={resource.address}
+              mono
+              className="text-muted-foreground"
+            />
+
+            {resource.status_reason ? (
+              <DetailBlock label="Status reason">{resource.status_reason}</DetailBlock>
+            ) : null}
+
+            {resource.drift_attributes && resource.drift_attributes.length > 0 ? (
+              <DetailBlock label="Drift">
+                <div className="flex flex-wrap gap-1">
+                  {resource.drift_attributes.map((attr) => (
+                    <Badge
+                      key={attr}
+                      variant="outline"
+                      className="font-mono normal-case"
+                    >
+                      {attr}
+                    </Badge>
+                  ))}
+                </div>
+              </DetailBlock>
+            ) : null}
+
+            {resource.attributes && Object.keys(resource.attributes).length > 0 ? (
+              <DetailBlock label="Attributes">
+                <dl className="space-y-1">
+                  {Object.entries(resource.attributes).map(([k, v]) => (
+                    <div key={k} className="grid grid-cols-[6.5rem_1fr] gap-2">
+                      <dt className="text-muted-foreground">{k}</dt>
+                      <dd className="truncate font-mono">{v}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </DetailBlock>
+            ) : null}
+
+            {resource.tags && Object.keys(resource.tags).length > 0 ? (
+              <DetailBlock label="Tags">
+                <div className="flex flex-wrap gap-1">
+                  {Object.entries(resource.tags).map(([k, v]) => (
+                    <Badge
+                      key={k}
+                      variant="secondary"
+                      className="font-mono normal-case"
+                    >
+                      {k}={v}
+                    </Badge>
+                  ))}
+                </div>
+              </DetailBlock>
+            ) : null}
+
+            {resource.last_changed && hasLastChanged ? (
+              <DetailBlock label="Last changed">
+                {new Date(resource.last_changed).toLocaleString()}
+              </DetailBlock>
+            ) : null}
+          </div>
+        </>
       ) : null}
     </div>
   );
 }
 
-function KV({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
+function DetailBlock({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="flex gap-3">
-      <span className="w-28 shrink-0 text-muted-foreground">{k}</span>
-      <span className={cn("min-w-0 truncate", mono && "font-mono")}>{v}</span>
+    <div>
+      <p className="mb-1.5 text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
+        {label}
+      </p>
+      {children}
     </div>
   );
 }
 
 function summariseAttributes(r: Resource): string {
   if (!r.attributes) return "";
-  // Pick the two most identifying attributes to show inline.
-  const order = ["instance_type", "instance_class", "engine", "machine_type", "tier", "region", "cidr_block", "runtime"];
+  const order = [
+    "instance_type",
+    "instance_class",
+    "engine",
+    "machine_type",
+    "tier",
+    "region",
+    "cidr_block",
+    "runtime",
+  ];
   const picks: string[] = [];
   for (const k of order) {
     const v = r.attributes[k];

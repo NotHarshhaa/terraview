@@ -6,14 +6,16 @@
 
 import * as React from "react";
 
-import { IconFolderOpen, IconChevronRight } from "@tabler/icons-react";
+import { IconChevronRight, IconFolderOpen } from "@tabler/icons-react";
 
-import { Card, CardContent } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { CloudServiceIcon } from "@/lib/cloud-icons";
 import { type GroupByMode } from "@/lib/filters";
 import { type Resource } from "@/lib/types";
 import type { Density } from "@/lib/views";
+import { cn } from "@/lib/utils";
 import { ResourceRow } from "./resource-row";
 
 interface ResourceGridProps {
@@ -79,10 +81,10 @@ export function ResourceGrid({
 
   if (resources.length === 0) {
     return (
-      <Card className="border-dashed bg-card/40">
-        <CardContent className="flex flex-col items-center justify-center gap-1 py-12 text-center">
+      <Card className="border-dashed bg-card/40 py-0 shadow-none">
+        <CardContent className="flex flex-col items-center justify-center gap-2 py-14 text-center">
           <p className="font-medium">No resources match the current filters.</p>
-          <p className="text-sm text-muted-foreground">
+          <p className="max-w-sm text-sm text-muted-foreground">
             {totalBeforeFilter > 0
               ? `Try clearing filters to see all ${totalBeforeFilter} resources.`
               : "Run `terraform apply` and refresh once your state file is populated."}
@@ -93,49 +95,60 @@ export function ResourceGrid({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {groups.map((group) => {
         const isCollapsed = collapsed.has(group.key);
         return (
-          <Card key={group.key} className="overflow-hidden py-0">
-            <button
-              type="button"
-              className="flex w-full items-center justify-between gap-2 border-b bg-muted/30 px-3 py-2 text-left hover:bg-muted/50"
-              onClick={() => toggleGroup(group.key)}
-              aria-expanded={!isCollapsed}
-            >
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <IconChevronRight
-                  className={cn(
-                    "size-4 text-muted-foreground transition-transform",
-                    !isCollapsed && "rotate-90",
+          <Card key={group.key} className="gap-0 overflow-hidden py-0 shadow-sm">
+            <CardHeader className="gap-0 border-b bg-muted/20 px-0 py-0">
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-auto w-full justify-between rounded-none px-3 py-2.5 hover:bg-muted/40"
+                onClick={() => toggleGroup(group.key)}
+                aria-expanded={!isCollapsed}
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <IconChevronRight
+                    className={cn(
+                      "size-4 shrink-0 text-muted-foreground transition-transform",
+                      !isCollapsed && "rotate-90",
+                    )}
+                    aria-hidden
+                  />
+                  {group.kind === "module" ? (
+                    <>
+                      <IconFolderOpen
+                        className="size-4 shrink-0 text-muted-foreground"
+                        aria-hidden
+                      />
+                      <span className="truncate font-mono text-xs">
+                        {group.module}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <CloudServiceIcon
+                        provider={group.provider}
+                        service={group.service}
+                        className="size-4 shrink-0"
+                      />
+                      <span className="truncate font-heading text-xs font-semibold tracking-wider uppercase">
+                        {group.provider}
+                      </span>
+                      <span className="text-muted-foreground">›</span>
+                      <span className="truncate text-xs">{group.service}</span>
+                    </>
                   )}
-                  aria-hidden
-                />
-                {group.kind === "module" ? (
-                  <>
-                    <IconFolderOpen className="size-4 text-muted-foreground" aria-hidden />
-                    <span className="font-mono text-xs">{group.module}</span>
-                  </>
-                ) : (
-                  <>
-                    <CloudServiceIcon
-                      provider={group.provider}
-                      service={group.service}
-                      className="size-5"
-                    />
-                    <span>{group.provider}</span>
-                    <span className="text-muted-foreground">›</span>
-                    <span>{group.service}</span>
-                  </>
-                )}
-              </div>
-              <span className="font-mono text-xs text-muted-foreground tabular-nums">
-                {group.resources.length}
-              </span>
-            </button>
+                </span>
+                <Badge variant="outline" className="ml-2 shrink-0 normal-case tabular-nums">
+                  {group.resources.length}
+                </Badge>
+              </Button>
+            </CardHeader>
+
             {!isCollapsed ? (
-              <div className="divide-y">
+              <CardContent className="divide-y p-0">
                 {group.resources.map((r) => (
                   <ResourceRow
                     key={r.address}
@@ -145,7 +158,7 @@ export function ResourceGrid({
                     onViewDetails={onViewDetails}
                   />
                 ))}
-              </div>
+              </CardContent>
             ) : null}
           </Card>
         );

@@ -420,6 +420,8 @@ export function Dashboard() {
         connectionState={connectionState}
         version={version}
         headline={headline}
+        resourceCount={filtered.length}
+        totalResources={snapshot?.summary.total}
         refreshing={refreshing}
         onRefresh={refresh}
         authRequired={authRequired && !unauthorized}

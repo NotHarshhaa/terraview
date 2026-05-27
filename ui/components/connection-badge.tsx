@@ -1,5 +1,6 @@
 "use client";
 
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { ConnectionState } from "@/lib/api";
 
@@ -32,12 +33,13 @@ const META: Record<
 export function ConnectionBadge({ state }: { state: ConnectionState }) {
   const meta = META[state];
   return (
-    <span
-      className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+    <Badge
+      variant="outline"
+      className="gap-1.5 normal-case"
       title={meta.title}
     >
       <span className={cn("size-1.5 rounded-full", meta.dot)} aria-hidden />
       {meta.label}
-    </span>
+    </Badge>
   );
 }
