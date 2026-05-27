@@ -72,6 +72,8 @@ func NewServer(p *Poller, cfg Config) *Server {
 //	GET  /api/health           -> liveness probe
 //	GET  /api/summary          -> Summary only
 //	GET  /api/resources        -> filtered resource list
+//	GET  /api/resource         -> single resource by address
+//	GET  /api/facets           -> filter facet counts
 //	GET  /api/snapshot         -> full Snapshot
 //	GET  /api/status           -> compact status payload for CI comments
 //	POST /api/refresh          -> force an out-of-band refresh
@@ -84,6 +86,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/summary", s.handleSummary)
 	mux.HandleFunc("/api/resources", s.handleResources)
+	mux.HandleFunc("/api/resource", s.handleResource)
+	mux.HandleFunc("/api/facets", s.handleFacets)
 	mux.HandleFunc("/api/snapshot", s.handleSnapshot)
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("/api/refresh", s.handleRefresh)
@@ -144,7 +148,7 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
   <li>Run the dev UI: <code>cd ui && npm run dev</code> and open <a href="http://localhost:3000">http://localhost:3000</a></li>
   <li>Or build the UI: <code>npm --prefix ui run build</code></li>
 </ul>
-<p>API endpoints: <code>/api/snapshot</code>, <code>/api/resources</code>, <code>/api/summary</code>, <code>/api/status</code>, <code>/api/events</code></p>
+<p>API endpoints: <code>/api/snapshot</code>, <code>/api/resources</code>, <code>/api/resource</code>, <code>/api/facets</code>, <code>/api/summary</code>, <code>/api/status</code>, <code>/api/events</code></p>
 </body></html>`))
 }
 

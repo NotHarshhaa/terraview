@@ -31,6 +31,12 @@ type StateLoader interface {
 	Type() string
 }
 
+// StateTimestamper is optionally implemented by backends that can report when
+// the state file was last modified.
+type StateTimestamper interface {
+	StateModifiedAt(ctx context.Context) (time.Time, bool)
+}
+
 // Options controls how the engine refreshes a snapshot.
 type Options struct {
 	WorkingDir string      // Terraform project root (where .tf files live).
@@ -82,12 +88,13 @@ func (e *Engine) Refresh(ctx context.Context, opts Options) (*models.Snapshot, e
 	}
 
 	var stateResources []StateResource
+	var stateMeta *StateFileMeta
 	if opts.Backend != nil {
 		rc, err := opts.Backend.LoadState(ctx)
 		switch {
 		case err == nil:
 			defer rc.Close()
-			parsed, perr := ParseStateJSON(rc)
+			parsed, meta, perr := ParseStateJSONWithMeta(rc)
 			if perr != nil {
 				snap.Errors = append(snap.Errors, models.SnapshotError{
 					Source:  "state",
@@ -95,6 +102,20 @@ func (e *Engine) Refresh(ctx context.Context, opts Options) (*models.Snapshot, e
 				})
 			}
 			stateResources = parsed
+			stateMeta = meta
+			if ts, ok := opts.Backend.(StateTimestamper); ok {
+				if mod, ok := ts.StateModifiedAt(ctx); ok {
+					snap.StateModifiedAt = mod.UTC()
+					for i := range stateResources {
+						if stateResources[i].LastChanged.IsZero() {
+							stateResources[i].LastChanged = mod.UTC()
+						}
+					}
+				}
+			}
+			if stateMeta != nil {
+				snap.StateSerial = stateMeta.Serial
+			}
 		case isStateNotFound(err):
 			// A missing state file is normal for a freshly cloned repo; we
 			// surface it as a warning rather than a hard failure.
@@ -189,6 +210,12 @@ func mergeAndClassify(decls []DeclaredResource, states []StateResource, plans []
 			r.Attributes = pickAttributes(state.Attributes)
 			r.Tags = state.Tags
 			r.LastChanged = state.LastChanged
+			if len(state.DriftAttributes) > 0 {
+				r.DriftAttributes = append([]string(nil), state.DriftAttributes...)
+			}
+		}
+		if plan != nil && plan.Action != PlanActionNoOp && plan.Action != PlanActionRead {
+			r.PlanAction = string(plan.Action)
 		}
 		out = append(out, r)
 	}
@@ -322,6 +349,9 @@ func applyDriftToState(states []StateResource, drift map[string]DriftInfo) {
 		if d, ok := drift[states[i].Address]; ok {
 			states[i].Drifted = true
 			states[i].DriftReason = d.Reason
+			if len(d.ChangedAttrs) > 0 {
+				states[i].DriftAttributes = append([]string(nil), d.ChangedAttrs...)
+			}
 		}
 	}
 }

@@ -90,6 +90,14 @@ type Resource struct {
 	// LastChanged is the timestamp of the most recent state change Terraview
 	// could infer. Zero when unknown.
 	LastChanged time.Time `json:"last_changed,omitempty"`
+
+	// PlanAction is the planned Terraform verb when a plan file is loaded
+	// (create, update, delete, replace).
+	PlanAction string `json:"plan_action,omitempty"`
+
+	// DriftAttributes lists attribute keys that differ from provider reality
+	// when drift was detected in a plan JSON file.
+	DriftAttributes []string `json:"drift_attributes,omitempty"`
 }
 
 // UISettings carries dashboard options from .terraview.yaml into the API
@@ -111,6 +119,12 @@ type Snapshot struct {
 	Summary     Summary         `json:"summary"`
 	Errors      []SnapshotError `json:"errors,omitempty"`
 	UI          *UISettings     `json:"ui,omitempty"`
+
+	// StateSerial is the Terraform state serial when available.
+	StateSerial int64 `json:"state_serial,omitempty"`
+
+	// StateModifiedAt is when the state file was last modified on the backend.
+	StateModifiedAt time.Time `json:"state_modified_at,omitempty"`
 }
 
 // Summary is a pre-aggregated count of statuses for the summary bar at the top

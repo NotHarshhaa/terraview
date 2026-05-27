@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/NotHarshhaa/terraview/internal/engine"
 )
@@ -68,6 +69,14 @@ func (l *LocalBackend) LoadState(ctx context.Context) (io.ReadCloser, error) {
 		return nil, err
 	}
 	return f, nil
+}
+
+func (l *LocalBackend) StateModifiedAt(ctx context.Context) (time.Time, bool) {
+	info, err := os.Stat(l.path)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return info.ModTime().UTC(), true
 }
 
 func (l *LocalBackend) Name() string { return "local:" + l.path }

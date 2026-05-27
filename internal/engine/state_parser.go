@@ -26,9 +26,18 @@ type StateResource struct {
 	Drifted     bool
 	DriftReason string
 
-	// LastChanged is best-effort: we use the state file's `serial` bump time
+	// LastChanged is best-effort: we use the state file's modification time
 	// when nothing better is available.
 	LastChanged time.Time
+
+	// DriftAttributes lists changed attribute keys from plan drift detection.
+	DriftAttributes []string
+}
+
+// StateFileMeta holds metadata parsed from a state JSON document.
+type StateFileMeta struct {
+	Serial           int64
+	TerraformVersion string
 }
 
 // rawStateFile mirrors the on-disk structure of a Terraform v4 state file.
@@ -60,9 +69,15 @@ type rawStateFile struct {
 // data_resources (Mode == "data") are intentionally skipped: they don't
 // represent infrastructure that can have a lifecycle status.
 func ParseStateJSON(r io.Reader) ([]StateResource, error) {
+	res, _, err := ParseStateJSONWithMeta(r)
+	return res, err
+}
+
+// ParseStateJSONWithMeta parses state resources and returns file metadata.
+func ParseStateJSONWithMeta(r io.Reader) ([]StateResource, *StateFileMeta, error) {
 	raw, err := io.ReadAll(r)
 	if err != nil {
-		return nil, fmt.Errorf("read state: %w", err)
+		return nil, nil, fmt.Errorf("read state: %w", err)
 	}
 
 	// `terraform show -json` wraps the state in {"values":{"root_module":...}}.
@@ -70,7 +85,11 @@ func ParseStateJSON(r io.Reader) ([]StateResource, error) {
 	// We try the legacy form first because that's what most backends store.
 	var legacy rawStateFile
 	if err := json.Unmarshal(raw, &legacy); err == nil && legacy.Version >= 4 {
-		return convertLegacyState(legacy), nil
+		meta := &StateFileMeta{
+			Serial:           legacy.Serial,
+			TerraformVersion: legacy.TerraformVersion,
+		}
+		return convertLegacyState(legacy), meta, nil
 	}
 
 	var showJSON struct {
@@ -81,10 +100,10 @@ func ParseStateJSON(r io.Reader) ([]StateResource, error) {
 	if err := json.Unmarshal(raw, &showJSON); err == nil && len(showJSON.Values.RootModule) > 0 {
 		var out []StateResource
 		collectShowJSONModule(showJSON.Values.RootModule, "", &out)
-		return out, nil
+		return out, nil, nil
 	}
 
-	return nil, fmt.Errorf("state file is neither a v4 tfstate nor a `terraform show -json` document")
+	return nil, nil, fmt.Errorf("state file is neither a v4 tfstate nor a `terraform show -json` document")
 }
 
 func convertLegacyState(raw rawStateFile) []StateResource {

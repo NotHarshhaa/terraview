@@ -48,6 +48,8 @@ export interface Resource {
   tags?: Record<string, string>;
   monthly_cost?: number;
   last_changed?: string;
+  plan_action?: string;
+  drift_attributes?: string[];
 }
 
 export interface Summary {
@@ -71,6 +73,35 @@ export interface Snapshot {
   summary: Summary;
   errors?: SnapshotError[];
   ui?: UISettings;
+  state_serial?: number;
+  state_modified_at?: string;
+}
+
+export interface StatusPayload {
+  generated_at: string;
+  backend_type: string;
+  total: number;
+  by_status: Partial<Record<Status, number>>;
+  by_provider: Record<string, number>;
+  total_monthly_cost?: number;
+  headline: string;
+}
+
+export interface FacetCount {
+  value: string;
+  count: number;
+}
+
+export interface FacetsPayload {
+  generated_at: string;
+  total: number;
+  facets: {
+    providers: FacetCount[];
+    categories: FacetCount[];
+    modules: FacetCount[];
+    tags: FacetCount[];
+    statuses: FacetCount[];
+  };
 }
 
 export interface UISettings {
@@ -79,6 +110,14 @@ export interface UISettings {
   default_filter?: string;
   auth_required?: boolean;
 }
+
+/** Display metadata for plan actions shown alongside pending statuses. */
+export const PLAN_ACTION_META: Record<string, { label: string }> = {
+  create: { label: "Create" },
+  update: { label: "Update" },
+  delete: { label: "Delete" },
+  replace: { label: "Replace" },
+};
 
 /** Display metadata for each status: label, dot colour, foreground/background classes. */
 export const STATUS_META: Record<

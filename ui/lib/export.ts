@@ -64,6 +64,26 @@ export function downloadCSV(resources: Resource[], meta: ExportMeta) {
   downloadBlob(header + lines.join("\n"), "text/csv", filename("csv"));
 }
 
+export function downloadMarkdown(resources: Resource[], meta: ExportMeta) {
+  const lines: string[] = [
+    "# Terraview export",
+    "",
+    `- Exported: ${new Date().toISOString()}`,
+  ];
+  if (meta.generatedAt) lines.push(`- Snapshot: ${meta.generatedAt}`);
+  if (meta.workingDir) lines.push(`- Working dir: \`${meta.workingDir}\``);
+  if (meta.filterSummary) lines.push(`- Filter: ${meta.filterSummary}`);
+  lines.push(`- Resources: ${resources.length}`, "", "| Address | Status | Type | Module |", "| --- | --- | --- | --- |");
+
+  for (const r of resources) {
+    lines.push(
+      `| \`${r.address}\` | ${r.status} | ${r.type} | ${r.module || "(root)"} |`,
+    );
+  }
+
+  downloadBlob(lines.join("\n"), "text/markdown", filename("md"));
+}
+
 function csvCell(value: string): string {
   if (/[",\n]/.test(value)) {
     return `"${value.replace(/"/g, '""')}"`;

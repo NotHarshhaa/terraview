@@ -57,6 +57,9 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 //	?module=//networking            — exact module match
 //	?q=web                          — case-insensitive substring on name/type/address
 //	?category=Compute               — exact service-family match
+//	?tag=env=prod,owner             — tag key=value or key-only match
+//	?address=aws_instance.web       — exact resource address
+//	?limit=50&offset=0              — pagination
 //
 // Filtering happens server-side so a project with thousands of resources
 // doesn't have to ship them all to the browser on every keystroke.
@@ -67,32 +70,17 @@ func (s *Server) handleResources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	q := r.URL.Query()
-	statuses := splitCSVSet(q.Get("status"))
-	providers := splitCSVSet(strings.ToLower(q.Get("provider")))
-	modules := splitCSVSet(q.Get("module"))
-	categories := splitCSVSet(q.Get("category"))
-	search := strings.ToLower(strings.TrimSpace(q.Get("q")))
-
-	filtered := snap.Resources[:0:0]
-	for _, res := range snap.Resources {
-		if len(statuses) > 0 && !statuses[string(res.Status)] {
-			continue
-		}
-		if len(providers) > 0 && !providers[strings.ToLower(res.Category.Provider)] {
-			continue
-		}
-		if len(modules) > 0 && !matchModuleFilter(res.Module, modules) {
-			continue
-		}
-		if len(categories) > 0 && !categories[res.Category.Service] {
-			continue
-		}
-		if search != "" && !matchesSearch(res, search) {
-			continue
-		}
-		filtered = append(filtered, res)
-	}
+	f := ParseResourceFilter(r)
+	all := FilterResources(snap.Resources, ResourceFilter{
+		Statuses:   f.Statuses,
+		Providers:  f.Providers,
+		Modules:    f.Modules,
+		Categories: f.Categories,
+		Tags:       f.Tags,
+		Search:     f.Search,
+	})
+	total := len(all)
+	filtered := FilterResources(all, ResourceFilter{Limit: f.Limit, Offset: f.Offset})
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"generated_at": snap.GeneratedAt,
@@ -100,7 +88,55 @@ func (s *Server) handleResources(w http.ResponseWriter, r *http.Request) {
 		"backend_type": snap.BackendType,
 		"resources":    filtered,
 		"errors":       snap.Errors,
-		"total":        len(filtered),
+		"total":        total,
+		"count":        len(filtered),
+		"offset":       f.Offset,
+		"limit":        f.Limit,
+	})
+}
+
+// handleResource returns a single resource by exact address.
+func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
+	address := strings.TrimSpace(r.URL.Query().Get("address"))
+	if address == "" {
+		writeError(w, http.StatusBadRequest, "address query parameter is required")
+		return
+	}
+
+	snap, err := s.poller.Snapshot()
+	if snap == nil {
+		writeError(w, http.StatusServiceUnavailable, errorMsgOrDefault(err, "snapshot not ready yet"))
+		return
+	}
+
+	for _, res := range snap.Resources {
+		if res.Address == address {
+			writeJSON(w, http.StatusOK, map[string]any{"resource": res})
+			return
+		}
+	}
+	writeError(w, http.StatusNotFound, "resource not found")
+}
+
+// handleFacets returns aggregated filter dimensions (providers, modules, tags, …).
+func (s *Server) handleFacets(w http.ResponseWriter, r *http.Request) {
+	snap, err := s.poller.Snapshot()
+	if snap == nil {
+		writeError(w, http.StatusServiceUnavailable, errorMsgOrDefault(err, "snapshot not ready yet"))
+		return
+	}
+
+	f := ParseResourceFilter(r)
+	// Allow pre-filtering facets with the same params except address/limit/offset.
+	f.Address = ""
+	f.Limit = 0
+	f.Offset = 0
+	resources := FilterResources(snap.Resources, f)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"generated_at": snap.GeneratedAt,
+		"total":        len(resources),
+		"facets":       BuildFacets(resources),
 	})
 }
 

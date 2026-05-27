@@ -6,7 +6,7 @@
 
 import * as React from "react";
 
-import type { Snapshot } from "./types";
+import type { FacetsPayload, Resource, Snapshot, StatusPayload } from "./types";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_TERRAVIEW_API?.replace(/\/$/, "") ?? "";
@@ -109,6 +109,18 @@ export async function fetchHealth(): Promise<{ version?: string; status?: string
   return fetchJSON("/api/health");
 }
 
+export async function fetchStatus(): Promise<StatusPayload> {
+  return fetchJSON("/api/status");
+}
+
+export async function fetchFacets(query?: string): Promise<FacetsPayload> {
+  return fetchJSON(`/api/facets${query ? `?${query}` : ""}`);
+}
+
+export async function fetchResource(address: string): Promise<{ resource: Resource }> {
+  return fetchJSON(`/api/resource?address=${encodeURIComponent(address)}`);
+}
+
 export async function refreshSnapshot(): Promise<Snapshot> {
   return fetchJSON<Snapshot>("/api/refresh", { method: "POST" });
 }
@@ -147,12 +159,16 @@ export function useSnapshot() {
   });
   const [refreshing, setRefreshing] = React.useState(false);
   const [version, setVersion] = React.useState<string | null>(null);
+  const [headline, setHeadline] = React.useState<string | null>(null);
   const loadGen = React.useRef(0);
 
   React.useEffect(() => {
     void fetchHealth()
       .then((h) => setVersion(h.version ?? null))
       .catch(() => setVersion(null));
+    void fetchStatus()
+      .then((s) => setHeadline(s.headline || null))
+      .catch(() => setHeadline(null));
   }, []);
 
   const load = React.useCallback(async () => {
@@ -169,6 +185,9 @@ export function useSnapshot() {
         unauthorized: false,
         connectionState: prev.connectionState,
       }));
+      void fetchStatus()
+        .then((s) => setHeadline(s.headline || null))
+        .catch(() => setHeadline(null));
     } catch (err) {
       if (gen !== loadGen.current) return;
       const message = err instanceof Error ? err.message : String(err);
@@ -248,6 +267,9 @@ export function useSnapshot() {
         unauthorized: false,
         connectionState: prev.connectionState,
       }));
+      void fetchStatus()
+        .then((s) => setHeadline(s.headline || null))
+        .catch(() => setHeadline(null));
     } catch (err) {
       if (gen !== loadGen.current) return;
       const message = err instanceof Error ? err.message : String(err);
@@ -292,5 +314,5 @@ export function useSnapshot() {
     void load();
   }, [load]);
 
-  return { ...state, refresh, refreshing, signIn, signOut, reload: load, version } as const;
+  return { ...state, refresh, refreshing, signIn, signOut, reload: load, version, headline } as const;
 }

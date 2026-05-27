@@ -48,6 +48,8 @@ Terraview reads your Terraform project — `.tf` files, state backend, and optio
 - **Zero-config local mode** — point at a directory; discovers `.tf` files and `terraform.tfstate`
 - **Multi-backend state** — local, S3, GCS, Azure Blob, Terraform Cloud / HCP Terraform
 - **Plan ingestion** — optional `plan_file` (`terraform show -json`) for pending changes and drift
+- **Plan & drift metadata** — `plan_action` and `drift_attributes` on each resource when a plan is loaded
+- **State metadata** — `state_serial` and `state_modified_at` on snapshots (local backend mtime)
 - **Eight lifecycle statuses** — `created`, `inactive`, `pending_create`, `pending_update`, `pending_destroy`, `drifted`, `unmanaged`, `unknown`
 - **Auto-categorization** — AWS / GCP / Azure / Kubernetes → Compute, Networking, Databases, Storage, IAM, Serverless, …
 - **Module-aware** — shows module path per resource
@@ -65,7 +67,12 @@ Terraview reads your Terraform project — `.tf` files, state backend, and optio
 - **Group by service or module** — toggle grid grouping; preference saved locally
 - **Sort & density** — sort by name, status, type, or address; compact row mode
 - **Collapsible groups** — expand/collapse all resource sections
-- **Resource detail sheet** — full metadata, tags, copy address, Terraform CLI hints
+- **Resource detail sheet** — full metadata, tags, copy address, Terraform CLI hints, plan action & drift attributes
+- **Provider breakdown chart** — clickable bar chart by cloud provider
+- **State info bar** — state serial and last-modified timestamp from backend
+- **CI headline in header** — live status summary from `/api/status`
+- **Tag filter from detail** — click a tag in the detail sheet to filter the grid
+- **Markdown export** — download filtered resources as a Markdown report
 - **Deep links** — `#resource=aws_instance.web` opens the detail panel
 - **Command palette** — `Ctrl+K` / `⌘K` to jump to any resource
 - **Keyboard shortcuts** — `/` search, `r` refresh, `Esc` clear filters, `?` help
@@ -80,7 +87,9 @@ Terraview reads your Terraform project — `.tf` files, state backend, and optio
 |---|---|
 | `GET /api/health` | Liveness + version |
 | `GET /api/snapshot` | Full snapshot (resources, summary, UI config) |
-| `GET /api/resources` | Filtered resource list (`?status=&provider=&module=&q=`) |
+| `GET /api/resources` | Filtered resource list (`?status=&provider=&module=&category=&tag=&q=&limit=&offset=`) |
+| `GET /api/resource` | Single resource by address (`?address=aws_instance.web`) |
+| `GET /api/facets` | Filter facet counts (optionally pre-filtered) |
 | `GET /api/summary` | Aggregate counts only |
 | `GET /api/status` | Compact headline for badges / CI |
 | `POST /api/refresh` | Force refresh |

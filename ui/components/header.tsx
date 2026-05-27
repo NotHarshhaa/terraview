@@ -28,6 +28,7 @@ interface HeaderProps {
   refreshing: boolean;
   onRefresh: () => void;
   version?: string | null;
+  headline?: string | null;
   onOpenCommand?: () => void;
   onShowShortcuts?: () => void;
   authRequired?: boolean;
@@ -44,6 +45,7 @@ export function Header({
   refreshing,
   onRefresh,
   version,
+  headline,
   onOpenCommand,
   onShowShortcuts,
   authRequired,
@@ -80,6 +82,14 @@ export function Header({
           {relative ? (
             <span className="text-xs text-muted-foreground">
               updated {relative}
+            </span>
+          ) : null}
+          {headline ? (
+            <span
+              className="hidden max-w-xs truncate text-xs text-muted-foreground xl:inline"
+              title={headline}
+            >
+              {headline}
             </span>
           ) : null}
           {version ? (

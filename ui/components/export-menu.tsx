@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/components/toast-provider";
-import { downloadCSV, downloadJSON } from "@/lib/export";
+import { downloadCSV, downloadJSON, downloadMarkdown } from "@/lib/export";
 import type { Resource } from "@/lib/types";
 
 interface ExportMenuProps {
@@ -62,6 +62,14 @@ export function ExportMenu({
           }}
         >
           Download CSV
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => {
+            downloadMarkdown(resources, meta);
+            toast(`Exported ${resources.length} resources as Markdown`);
+          }}
+        >
+          Download Markdown report
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={async () => {

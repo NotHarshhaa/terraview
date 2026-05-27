@@ -18,18 +18,20 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { useToast } from "@/components/toast-provider";
-import { type Resource } from "@/lib/types";
+import { type Resource, PLAN_ACTION_META } from "@/lib/types";
 
 interface ResourceDetailSheetProps {
   resource: Resource | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onFilterTag?: (tag: string) => void;
 }
 
 export function ResourceDetailSheet({
   resource,
   open,
   onOpenChange,
+  onFilterTag,
 }: ResourceDetailSheetProps) {
   const { toast } = useToast();
   if (!resource) return null;
@@ -67,6 +69,27 @@ export function ResourceDetailSheet({
             <Section title="Status reason">{resource.status_reason}</Section>
           ) : null}
 
+          {resource.plan_action ? (
+            <Section title="Planned action">
+              {PLAN_ACTION_META[resource.plan_action]?.label ?? resource.plan_action}
+            </Section>
+          ) : null}
+
+          {resource.drift_attributes && resource.drift_attributes.length > 0 ? (
+            <Section title="Drifted attributes">
+              <div className="flex flex-wrap gap-1">
+                {resource.drift_attributes.map((attr) => (
+                  <span
+                    key={attr}
+                    className="rounded-md bg-muted px-2 py-1 font-mono text-[11px]"
+                  >
+                    {attr}
+                  </span>
+                ))}
+              </div>
+            </Section>
+          ) : null}
+
           <Section title="Metadata">
             <DL>
               <Row k="Type" v={resource.type} mono />
@@ -101,8 +124,15 @@ export function ResourceDetailSheet({
                     type="button"
                     className="rounded-md bg-muted px-2 py-1 font-mono text-[11px] hover:bg-muted/80"
                     onClick={async () => {
-                      await navigator.clipboard.writeText(`${k}=${v}`);
-                      toast(`Copied ${k}=${v}`);
+                      const tag = `${k}=${v}`;
+                      if (onFilterTag) {
+                        onFilterTag(tag);
+                        onOpenChange(false);
+                        toast(`Filtered by ${tag}`);
+                        return;
+                      }
+                      await navigator.clipboard.writeText(tag);
+                      toast(`Copied ${tag}`);
                     }}
                   >
                     {k}={v}

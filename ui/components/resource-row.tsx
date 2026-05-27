@@ -16,7 +16,7 @@ import { CopyButton, CopyText } from "@/components/copy-button";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { resourceDomId } from "@/lib/filters";
-import { type Resource } from "@/lib/types";
+import { type Resource, PLAN_ACTION_META } from "@/lib/types";
 import type { Density } from "@/lib/views";
 import { StatusBadge } from "./status-badge";
 
@@ -45,6 +45,8 @@ export function ResourceRow({
     !resource.last_changed.startsWith("0001-01-01");
   const hasDetails =
     !!resource.status_reason ||
+    !!resource.plan_action ||
+    !!(resource.drift_attributes && resource.drift_attributes.length) ||
     !!resource.attributes ||
     (resource.tags && Object.keys(resource.tags).length > 0) ||
     hasLastChanged;
@@ -67,6 +69,11 @@ export function ResourceRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 text-sm">
           <span className="truncate font-medium">{resource.name}</span>
+          {resource.plan_action ? (
+            <span className="hidden rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground sm:inline">
+              {PLAN_ACTION_META[resource.plan_action]?.label ?? resource.plan_action}
+            </span>
+          ) : null}
           {attrSummary ? (
             <span className="hidden truncate font-mono text-xs text-muted-foreground sm:inline">
               {attrSummary}
@@ -127,6 +134,9 @@ export function ResourceRow({
           <CopyText value={resource.address} mono className="text-muted-foreground/80" />
           {resource.status_reason ? (
             <KV k="Why" v={resource.status_reason} />
+          ) : null}
+          {resource.drift_attributes && resource.drift_attributes.length > 0 ? (
+            <KV k="Drift" v={resource.drift_attributes.join(", ")} mono />
           ) : null}
           {resource.attributes
             ? Object.entries(resource.attributes).map(([k, v]) => (

@@ -18,8 +18,10 @@ import { buildFilterChips, FilterChips } from "@/components/filter-chips";
 import { FilterSidebar } from "@/components/filter-sidebar";
 import { Header } from "@/components/header";
 import { AttentionBanner, StatusChart } from "@/components/insights-panel";
+import { ProviderBreakdown } from "@/components/provider-breakdown";
 import { ResourceDetailSheet } from "@/components/resource-detail-sheet";
 import { ResourceGrid } from "@/components/resource-grid";
+import { StateInfoBar } from "@/components/state-info-bar";
 import { useDashboardHotkeys } from "@/components/shortcuts-sheet";
 import { useToast } from "@/components/toast-provider";
 import { ViewToolbar } from "@/components/view-toolbar";
@@ -87,6 +89,7 @@ export function Dashboard() {
     signIn,
     signOut,
     version,
+    headline,
   } = useSnapshot();
 
   const [filters, setFilters] = React.useState<FilterState>(() => {
@@ -268,6 +271,18 @@ export function Dashboard() {
     window.location.hash = `resource=${encodeURIComponent(resource.address)}`;
   }, []);
 
+  const filterByTag = React.useCallback((tag: string) => {
+    setFilters((prev) => {
+      const next = new Set(prev.tags);
+      next.add(tag);
+      return { ...prev, tags: next };
+    });
+  }, []);
+
+  const clearProviderFilters = React.useCallback(() => {
+    setFilters((prev) => ({ ...prev, providers: new Set() }));
+  }, []);
+
   const applyPreset = React.useCallback((presetId: string) => {
     const preset = QUICK_PRESETS.find((p) => p.id === presetId);
     if (!preset) return;
@@ -404,6 +419,7 @@ export function Dashboard() {
         generatedAt={snapshot?.generated_at}
         connectionState={connectionState}
         version={version}
+        headline={headline}
         refreshing={refreshing}
         onRefresh={refresh}
         authRequired={authRequired && !unauthorized}
@@ -453,6 +469,7 @@ export function Dashboard() {
       <ResourceDetailSheet
         resource={detailResource}
         open={detailOpen}
+        onFilterTag={filterByTag}
         onOpenChange={(open) => {
           setDetailOpen(open);
           if (!open) {
@@ -487,18 +504,31 @@ export function Dashboard() {
                 summary={facetSummary}
                 onFilterStatus={setActiveStatuses}
               />
-              <StatusChart
-                summary={facetSummary}
-                activeStatuses={activeStatuses}
-                onStatusToggle={(status) => {
-                  setActiveStatuses((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(status)) next.delete(status);
-                    else next.add(status);
-                    return next;
-                  });
-                }}
+              <StateInfoBar
+                backendType={snapshot.backend_type}
+                stateSerial={snapshot.state_serial}
+                stateModifiedAt={snapshot.state_modified_at}
               />
+              <div className="grid gap-4 lg:grid-cols-[1fr_16rem]">
+                <StatusChart
+                  summary={facetSummary}
+                  activeStatuses={activeStatuses}
+                  onStatusToggle={(status) => {
+                    setActiveStatuses((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(status)) next.delete(status);
+                      else next.add(status);
+                      return next;
+                    });
+                  }}
+                />
+                <ProviderBreakdown
+                  summary={facetSummary}
+                  activeProviders={activeProviders}
+                  onProviderToggle={(p) => toggleSet("providers", p)}
+                  onClearProviders={clearProviderFilters}
+                />
+              </div>
               <SummaryBar
                 summary={facetSummary}
                 activeStatuses={activeStatuses}
