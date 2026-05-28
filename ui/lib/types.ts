@@ -50,6 +50,21 @@ export interface Resource {
   last_changed?: string;
   plan_action?: string;
   drift_attributes?: string[];
+  depends_on?: string[];
+}
+
+export interface WorkspaceInfo {
+  name: string;
+  current?: boolean;
+}
+
+export interface DependencyEdge {
+  from: string;
+  to: string;
+}
+
+export interface DependencyGraph {
+  edges: DependencyEdge[];
 }
 
 export interface Summary {
@@ -75,6 +90,9 @@ export interface Snapshot {
   ui?: UISettings;
   state_serial?: number;
   state_modified_at?: string;
+  terraform_workspace?: string;
+  available_workspaces?: WorkspaceInfo[];
+  dependency_graph?: DependencyGraph;
 }
 
 export interface StatusPayload {

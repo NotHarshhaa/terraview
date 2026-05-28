@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -17,6 +18,7 @@ type DeclaredResource struct {
 	Module   string // "//networking" or "" for root
 	File     string
 	Provider string
+	DependsOn []string
 }
 
 // Address returns the canonical Terraform address.
@@ -35,6 +37,7 @@ func (d DeclaredResource) Address() string {
 var resourceBlockRegex = regexp.MustCompile(`^\s*resource\s+["']([a-zA-Z0-9_]+)["']\s+["']([a-zA-Z0-9_\-]+)["']\s*\{`)
 var moduleBlockRegex = regexp.MustCompile(`^\s*module\s+["']([a-zA-Z0-9_\-]+)["']\s*\{`)
 var moduleSourceRegex = regexp.MustCompile(`^\s*source\s*=\s*["']([^"']+)["']`)
+var hclResourceRefRegex = regexp.MustCompile(`\b((?:module\.[a-zA-Z0-9_\-]+\.)*[a-zA-Z][a-zA-Z0-9_]*\.[a-zA-Z0-9_\-]+(?:\[[^\]]+\])?)`)
 
 // HCLParseResult bundles successfully parsed declarations with any per-file errors.
 type HCLParseResult struct {
@@ -244,18 +247,72 @@ func parseHCLFile(path, module string) ([]DeclaredResource, error) {
 		if m == nil {
 			continue
 		}
-		out = append(out, DeclaredResource{
+		body, err := readBlockBody(scanner, &inBlockComment)
+		if err != nil {
+			return out, err
+		}
+		self := DeclaredResource{
 			Type:     m[1],
 			Name:     m[2],
 			Module:   module,
 			File:     path,
 			Provider: providerFromType(m[1]),
-		})
+		}
+		selfAddr := self.Address()
+		self.DependsOn = extractHCLDependencies(body, selfAddr)
+		out = append(out, self)
 	}
 	if err := scanner.Err(); err != nil {
 		return out, err
 	}
 	return out, nil
+}
+
+func readBlockBody(scanner *bufio.Scanner, inBlockComment *bool) (string, error) {
+	var b strings.Builder
+	depth := 1
+	for scanner.Scan() {
+		raw := scanner.Text()
+		line := stripBlockComments(raw, inBlockComment)
+		line = stripLineComments(line)
+		b.WriteString(line)
+		b.WriteByte('\n')
+		depth += strings.Count(line, "{") - strings.Count(line, "}")
+		if depth <= 0 {
+			break
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return "", err
+	}
+	return b.String(), nil
+}
+
+func extractHCLDependencies(body, selfAddr string) []string {
+	body = stripHCLStringLiterals(body)
+	set := map[string]struct{}{}
+	for _, match := range hclResourceRefRegex.FindAllString(body, -1) {
+		addr := normaliseDepAddress(match)
+		if addr == "" || addr == selfAddr {
+			continue
+		}
+		set[addr] = struct{}{}
+	}
+	if len(set) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(set))
+	for k := range set {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+var hclStringLiteralRegex = regexp.MustCompile(`"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'`)
+
+func stripHCLStringLiterals(s string) string {
+	return hclStringLiteralRegex.ReplaceAllString(s, `""`)
 }
 
 func stripLineComments(line string) string {

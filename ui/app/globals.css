@@ -127,3 +127,32 @@
     @apply font-sans;
     }
 }
+
+.terraview-flow .react-flow__pane {
+  cursor: grab;
+}
+
+.terraview-flow .react-flow__pane:active {
+  cursor: grabbing;
+}
+
+.terraview-flow .react-flow__edge-path {
+  stroke-linecap: round;
+}
+
+.terraview-flow .react-flow__controls-button {
+  border-radius: 0;
+}
+
+.terraview-flow .react-flow__minimap {
+  border-radius: 0;
+}
+
+.terraview-flow .terraview-dep-edge .react-flow__edge-path {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.dark .terraview-flow .terraview-dep-edge .react-flow__edge-path {
+  stroke: oklch(0.72 0.02 285);
+}

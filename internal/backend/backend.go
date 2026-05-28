@@ -48,6 +48,7 @@ type Config struct {
 	// Terraform Cloud / HCP Terraform
 	Organization string `yaml:"organization" json:"organization"`
 	Workspace    string `yaml:"workspace" json:"workspace"`
+	Workspaces   []string `yaml:"workspaces" json:"workspaces"` // optional explicit list (remote backends)
 	Token        string `yaml:"token" json:"token"`
 	Hostname     string `yaml:"hostname" json:"hostname"` // defaults to app.terraform.io
 }

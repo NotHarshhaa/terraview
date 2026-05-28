@@ -6,52 +6,73 @@ package api
 import (
 	"context"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/NotHarshhaa/terraview/internal/backend"
 	"github.com/NotHarshhaa/terraview/internal/engine"
 	"github.com/NotHarshhaa/terraview/internal/models"
 )
 
-// Poller owns the latest models.Snapshot and refreshes it on a fixed
-// interval. It also exposes a manual Refresh() so the UI can force an
-// out-of-band reload.
-type Poller struct {
-	engine  *engine.Engine
-	options engine.Options
-	period  time.Duration
-	logger  *log.Logger
+// PollerConfig drives snapshot refresh for a Terraform project.
+type PollerConfig struct {
+	WorkingDir string
+	PlanPath   string
+	Backend    backend.Config
+}
 
-	mu        sync.RWMutex
-	refreshMu sync.Mutex // serialises engine.Refresh calls
-	current   *models.Snapshot
-	lastErr   error
-	subs      map[chan struct{}]struct{}
-	subsLock  sync.Mutex
+// Poller owns workspace-scoped snapshots and refreshes the active workspace on
+// a fixed interval. Cached snapshots allow instant workspace switching without
+// restarting the server.
+type Poller struct {
+	engine     *engine.Engine
+	baseOpts   engine.Options
+	backendCfg backend.Config
+	period     time.Duration
+	logger     *log.Logger
+
+	mu         sync.RWMutex
+	refreshMu  sync.Mutex
+	workspace  string
+	workspaces []models.WorkspaceInfo
+	cache      map[string]*models.Snapshot
+	lastErr    error
+	subs       map[chan struct{}]struct{}
+	subsLock   sync.Mutex
 }
 
 // NewPoller returns a poller that uses eng to produce snapshots based on
-// opts every period. period is clamped to at least 5s to avoid hammering
+// cfg every period. period is clamped to at least 5s to avoid hammering
 // state backends.
-func NewPoller(eng *engine.Engine, opts engine.Options, period time.Duration, logger *log.Logger) *Poller {
+func NewPoller(eng *engine.Engine, cfg PollerConfig, period time.Duration, logger *log.Logger) *Poller {
 	if period < 5*time.Second {
 		period = 5 * time.Second
 	}
 	if logger == nil {
 		logger = log.Default()
 	}
+	ws := strings.TrimSpace(cfg.Backend.Workspace)
+	if ws == "" {
+		ws = backend.DefaultWorkspace
+	}
+	cfg.Backend.Workspace = ws
 	return &Poller{
-		engine:  eng,
-		options: opts,
-		period:  period,
-		logger:  logger,
-		subs:    map[chan struct{}]struct{}{},
+		engine:     eng,
+		baseOpts:   engine.Options{WorkingDir: cfg.WorkingDir, PlanPath: cfg.PlanPath},
+		backendCfg: cfg.Backend,
+		period:     period,
+		logger:     logger,
+		workspace:  ws,
+		cache:      map[string]*models.Snapshot{},
+		subs:       map[chan struct{}]struct{}{},
 	}
 }
 
-// Run blocks until ctx is cancelled, refreshing the snapshot on every tick.
+// Run blocks until ctx is cancelled, refreshing the active workspace on every tick.
 func (p *Poller) Run(ctx context.Context) {
-	p.refreshOnce(ctx)
+	p.discoverWorkspaces(ctx)
+	p.refreshOnce(ctx, p.workspace)
 
 	ticker := time.NewTicker(p.period)
 	defer ticker.Stop()
@@ -60,51 +81,73 @@ func (p *Poller) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			p.refreshOnce(ctx)
+			p.refreshOnce(ctx, p.workspace)
 		}
 	}
 }
 
-// Refresh forces an immediate refresh and returns the resulting snapshot.
-func (p *Poller) Refresh(ctx context.Context) (*models.Snapshot, error) {
-	return p.refreshOnce(ctx)
-}
-
-func (p *Poller) refreshOnce(ctx context.Context) (*models.Snapshot, error) {
-	p.refreshMu.Lock()
-	defer p.refreshMu.Unlock()
-
-	start := time.Now()
-	snap, err := p.engine.Refresh(ctx, p.options)
-	took := time.Since(start)
-
-	p.mu.Lock()
-	if err == nil {
-		p.current = snap
-		p.lastErr = nil
-		p.logger.Printf("snapshot refreshed: %d resources in %s", snap.Summary.Total, took.Round(time.Millisecond))
-	} else {
-		p.lastErr = err
-		p.logger.Printf("snapshot refresh failed in %s: %v", took.Round(time.Millisecond), err)
-	}
-	p.mu.Unlock()
-
-	if err == nil {
-		p.broadcast()
-	}
-	return snap, err
-}
-
-// Snapshot returns the most recent snapshot and the most recent fatal error.
-func (p *Poller) Snapshot() (*models.Snapshot, error) {
+// CurrentWorkspace returns the active Terraform workspace name.
+func (p *Poller) CurrentWorkspace() string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return p.current, p.lastErr
+	return p.workspace
+}
+
+// Workspaces returns the last discovered workspace list with Current flags set.
+func (p *Poller) Workspaces() []models.WorkspaceInfo {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return cloneWorkspaceList(p.workspaces, p.workspace)
+}
+
+// Refresh forces an immediate refresh of the active workspace.
+func (p *Poller) Refresh(ctx context.Context) (*models.Snapshot, error) {
+	return p.refreshOnce(ctx, p.CurrentWorkspace())
+}
+
+// SetWorkspace switches the active workspace. Returns a cached snapshot when
+// available; otherwise refreshes from the backend before returning.
+func (p *Poller) SetWorkspace(ctx context.Context, workspace string) (*models.Snapshot, error) {
+	workspace = strings.TrimSpace(workspace)
+	if workspace == "" {
+		workspace = backend.DefaultWorkspace
+	}
+
+	p.mu.Lock()
+	if workspace == p.workspace {
+		snap := p.cache[workspace]
+		p.mu.Unlock()
+		if snap != nil {
+			return p.decorate(snap), nil
+		}
+		return p.refreshOnce(ctx, workspace)
+	}
+	p.workspace = workspace
+	p.backendCfg.Workspace = workspace
+	cached := p.cache[workspace]
+	p.mu.Unlock()
+
+	if cached != nil {
+		p.broadcast()
+		return p.decorate(cached), nil
+	}
+	return p.refreshOnce(ctx, workspace)
+}
+
+// Snapshot returns the most recent snapshot for the active workspace.
+func (p *Poller) Snapshot() (*models.Snapshot, error) {
+	p.mu.RLock()
+	ws := p.workspace
+	snap := p.cache[ws]
+	err := p.lastErr
+	p.mu.RUnlock()
+	if snap == nil {
+		return nil, err
+	}
+	return p.decorate(snap), err
 }
 
 // Subscribe returns a channel notified on each successful refresh.
-// Do not close subscriber channels — the unsubscribe func removes them from
-// the registry so a closed channel never spins the SSE handler.
 func (p *Poller) Subscribe() (<-chan struct{}, func()) {
 	ch := make(chan struct{}, 1)
 	p.subsLock.Lock()
@@ -116,6 +159,88 @@ func (p *Poller) Subscribe() (<-chan struct{}, func()) {
 		p.subsLock.Unlock()
 	}
 	return ch, cancel
+}
+
+func (p *Poller) discoverWorkspaces(ctx context.Context) {
+	list, err := backend.ListWorkspaces(ctx, p.backendCfg)
+	if err != nil {
+		p.logger.Printf("list workspaces: %v", err)
+		list = []models.WorkspaceInfo{{Name: p.workspace, Current: true}}
+	}
+	p.mu.Lock()
+	p.workspaces = list
+	p.mu.Unlock()
+}
+
+func (p *Poller) refreshOnce(ctx context.Context, workspace string) (*models.Snapshot, error) {
+	p.refreshMu.Lock()
+	defer p.refreshMu.Unlock()
+
+	start := time.Now()
+	be, err := backend.NewForWorkspace(p.backendCfg, workspace)
+	if err != nil {
+		p.mu.Lock()
+		p.lastErr = err
+		p.mu.Unlock()
+		p.logger.Printf("workspace %q backend: %v", workspace, err)
+		return nil, err
+	}
+
+	opts := p.baseOpts
+	opts.Backend = be
+	opts.Workspace = workspace
+
+	snap, err := p.engine.Refresh(ctx, opts)
+	took := time.Since(start)
+
+	p.mu.Lock()
+	if err == nil {
+		p.cache[workspace] = snap
+		if workspace == p.workspace {
+			p.lastErr = nil
+		}
+		p.logger.Printf("snapshot refreshed (%s): %d resources in %s", workspace, snap.Summary.Total, took.Round(time.Millisecond))
+	} else if workspace == p.workspace {
+		p.lastErr = err
+		p.logger.Printf("snapshot refresh failed (%s) in %s: %v", workspace, took.Round(time.Millisecond), err)
+	}
+	p.mu.Unlock()
+
+	if err == nil {
+		p.discoverWorkspaces(ctx)
+		p.broadcast()
+		return p.decorate(snap), nil
+	}
+	return nil, err
+}
+
+func (p *Poller) decorate(snap *models.Snapshot) *models.Snapshot {
+	if snap == nil {
+		return nil
+	}
+	p.mu.RLock()
+	ws := p.workspace
+	workspaces := cloneWorkspaceList(p.workspaces, ws)
+	p.mu.RUnlock()
+
+	out := *snap
+	out.TerraformWorkspace = ws
+	out.AvailableWorkspaces = workspaces
+	return &out
+}
+
+func cloneWorkspaceList(list []models.WorkspaceInfo, current string) []models.WorkspaceInfo {
+	if len(list) == 0 {
+		return []models.WorkspaceInfo{{Name: current, Current: true}}
+	}
+	out := make([]models.WorkspaceInfo, len(list))
+	for i, w := range list {
+		out[i] = models.WorkspaceInfo{
+			Name:    w.Name,
+			Current: w.Name == current,
+		}
+	}
+	return out
 }
 
 func (p *Poller) broadcast() {

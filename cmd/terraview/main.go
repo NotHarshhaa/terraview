@@ -173,18 +173,16 @@ func runServe(args, positional []string) int {
 
 	logger := log.New(os.Stdout, "[terraview] ", log.LstdFlags|log.Lmsgprefix)
 
-	be, err := backend.New(cfg.Backend)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "backend:", err)
-		return 1
+	if cfg.Backend.Type == "" {
+		cfg.Backend.Type = "local"
 	}
-	logger.Printf("backend: %s", be.Name())
+	logger.Printf("backend: %s (workspace: %s)", cfg.Backend.Type, defaultWorkspace(cfg.Backend.Workspace))
 
 	eng := engine.New()
-	poller := api.NewPoller(eng, engine.Options{
+	poller := api.NewPoller(eng, api.PollerConfig{
 		WorkingDir: cfg.WorkingDir,
-		Backend:    be,
 		PlanPath:   cfg.PlanFile,
+		Backend:    cfg.Backend,
 	}, cfg.PollInterval, logger)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -342,6 +340,13 @@ func printMarkdownStatus(snap any) {
 			r.Name, r.Type, defaultStr(r.Module, "root"),
 			r.Status, formatLastChanged(r.LastChanged))
 	}
+}
+
+func defaultWorkspace(ws string) string {
+	if strings.TrimSpace(ws) == "" {
+		return "default"
+	}
+	return strings.TrimSpace(ws)
 }
 
 func defaultStr(s, def string) string {

@@ -52,6 +52,7 @@ interface HeaderProps {
   onSignOut?: () => void;
   exportMenu?: React.ReactNode;
   mobileFilters?: React.ReactNode;
+  workspaceSwitcher?: React.ReactNode;
 }
 
 export function Header({
@@ -71,6 +72,7 @@ export function Header({
   onSignOut,
   exportMenu,
   mobileFilters,
+  workspaceSwitcher,
 }: HeaderProps) {
   const relative = useRelativeTime(generatedAt);
   const backendProvider = backendProviderLabel(backendType);
@@ -111,6 +113,7 @@ export function Header({
           />
 
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
+            {workspaceSwitcher}
             {mobileFilters}
 
             <Tooltip>

@@ -15,11 +15,13 @@ import (
 
 // S3Backend reads a Terraform state file from an S3 bucket.
 type S3Backend struct {
-	bucket   string
-	key      string
-	region   string
-	endpoint string // optional override (S3-compatible stores)
-	lockTbl  string
+	bucket    string
+	key       string
+	baseKey   string
+	workspace string
+	region    string
+	endpoint  string // optional override (S3-compatible stores)
+	lockTbl   string
 }
 
 // NewS3 validates the config and returns a configured S3 backend.
@@ -30,12 +32,18 @@ func NewS3(cfg Config) (*S3Backend, error) {
 	if cfg.Key == "" {
 		return nil, errors.New("s3 backend requires key")
 	}
+	ws := cfg.Workspace
+	if ws == "" {
+		ws = DefaultWorkspace
+	}
 	return &S3Backend{
-		bucket:   cfg.Bucket,
-		key:      cfg.Key,
-		region:   cfg.Region,
-		endpoint: cfg.Endpoint,
-		lockTbl:  cfg.DynamoDBTable,
+		bucket:    cfg.Bucket,
+		key:       workspaceStateKey(cfg.Key, ws),
+		baseKey:   cfg.Key,
+		workspace: ws,
+		region:    cfg.Region,
+		endpoint:  cfg.Endpoint,
+		lockTbl:   cfg.DynamoDBTable,
 	}, nil
 }
 

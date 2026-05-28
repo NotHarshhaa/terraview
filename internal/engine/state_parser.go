@@ -32,6 +32,9 @@ type StateResource struct {
 
 	// DriftAttributes lists changed attribute keys from plan drift detection.
 	DriftAttributes []string
+
+	// DependsOn lists explicit upstream dependencies from state.
+	DependsOn []string
 }
 
 // StateFileMeta holds metadata parsed from a state JSON document.
@@ -53,7 +56,8 @@ type rawStateFile struct {
 		Mode      string `json:"mode"`
 		Type      string `json:"type"`
 		Name      string `json:"name"`
-		Provider  string `json:"provider"`
+		Provider  string   `json:"provider"`
+		DependsOn []string `json:"depends_on"`
 		Instances []struct {
 			IndexKey   any            `json:"index_key,omitempty"`
 			Attributes map[string]any `json:"attributes"`
@@ -128,6 +132,7 @@ func convertLegacyState(raw rawStateFile) []StateResource {
 				Provider:   providerNameFromTfProviderRef(r.Provider, r.Type),
 				Attributes: inst.Attributes,
 				Tags:       extractTags(inst.Attributes),
+				DependsOn:  append([]string(nil), r.DependsOn...),
 			})
 		}
 	}
@@ -146,6 +151,7 @@ func collectShowJSONModule(raw json.RawMessage, parentAddress string, out *[]Sta
 			Type         string         `json:"type"`
 			Name         string         `json:"name"`
 			ProviderName string         `json:"provider_name"`
+			DependsOn    []string       `json:"depends_on"`
 			Values       map[string]any `json:"values"`
 		} `json:"resources"`
 		ChildModules []json.RawMessage `json:"child_modules"`
@@ -173,6 +179,7 @@ func collectShowJSONModule(raw json.RawMessage, parentAddress string, out *[]Sta
 			Provider:   providerNameFromTfProviderRef(r.ProviderName, r.Type),
 			Attributes: r.Values,
 			Tags:       extractTags(r.Values),
+			DependsOn:  append([]string(nil), r.DependsOn...),
 		})
 	}
 	for _, child := range mod.ChildModules {

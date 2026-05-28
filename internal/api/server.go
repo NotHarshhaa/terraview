@@ -75,6 +75,9 @@ func NewServer(p *Poller, cfg Config) *Server {
 //	GET  /api/resource         -> single resource by address
 //	GET  /api/facets           -> filter facet counts
 //	GET  /api/snapshot         -> full Snapshot
+//	GET  /api/workspaces       -> list Terraform workspaces
+//	POST /api/workspace        -> switch active workspace
+//	GET  /api/graph            -> dependency graph for active workspace
 //	GET  /api/status           -> compact status payload for CI comments
 //	POST /api/refresh          -> force an out-of-band refresh
 //	POST /api/login           -> exchange credentials for session token
@@ -89,6 +92,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/resource", s.handleResource)
 	mux.HandleFunc("/api/facets", s.handleFacets)
 	mux.HandleFunc("/api/snapshot", s.handleSnapshot)
+	mux.HandleFunc("/api/workspaces", s.handleWorkspaces)
+	mux.HandleFunc("/api/workspace", s.handleWorkspace)
+	mux.HandleFunc("/api/graph", s.handleGraph)
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("/api/refresh", s.handleRefresh)
 	mux.HandleFunc("/api/login", s.handleLogin)

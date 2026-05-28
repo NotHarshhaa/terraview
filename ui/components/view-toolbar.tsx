@@ -5,6 +5,7 @@ import {
   IconChevronsUp,
   IconLayoutGrid,
   IconList,
+  IconShare3,
 } from "@tabler/icons-react";
 
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,8 @@ import {
 } from "@/lib/views";
 
 interface ViewToolbarProps {
+  viewMode: "grid" | "graph";
+  onViewModeChange: (mode: "grid" | "graph") => void;
   groupBy: GroupByMode;
   onGroupByChange: (mode: GroupByMode) => void;
   sortKey: SortKey;
@@ -39,6 +42,8 @@ interface ViewToolbarProps {
 }
 
 export function ViewToolbar({
+  viewMode,
+  onViewModeChange,
   groupBy,
   onGroupByChange,
   sortKey,
@@ -53,15 +58,35 @@ export function ViewToolbar({
 }: ViewToolbarProps) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <Tabs
-        value={groupBy}
-        onValueChange={(v) => onGroupByChange(v as GroupByMode)}
-      >
-        <TabsList>
-          <TabsTrigger value="category">By service</TabsTrigger>
-          <TabsTrigger value="module">By module</TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <div className="flex flex-wrap items-center gap-2">
+        <Tabs
+          value={viewMode}
+          onValueChange={(v) => onViewModeChange(v as "grid" | "graph")}
+        >
+          <TabsList>
+            <TabsTrigger value="grid" className="gap-1.5">
+              <IconLayoutGrid className="size-3.5" aria-hidden />
+              Grid
+            </TabsTrigger>
+            <TabsTrigger value="graph" className="gap-1.5">
+              <IconShare3 className="size-3.5" aria-hidden />
+              Graph
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        {viewMode === "grid" ? (
+          <Tabs
+            value={groupBy}
+            onValueChange={(v) => onGroupByChange(v as GroupByMode)}
+          >
+            <TabsList>
+              <TabsTrigger value="category">By service</TabsTrigger>
+              <TabsTrigger value="module">By module</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        ) : null}
+      </div>
 
       <div className="flex flex-wrap items-center gap-2">
         <span className="hidden text-xs text-muted-foreground sm:inline">
@@ -97,6 +122,7 @@ export function ViewToolbar({
             onDensityChange(density === "compact" ? "comfortable" : "compact")
           }
           title={density === "compact" ? "Comfortable density" : "Compact density"}
+          disabled={viewMode === "graph"}
         >
           {density === "compact" ? (
             <IconList className="size-4" />
@@ -105,10 +131,10 @@ export function ViewToolbar({
           )}
         </Button>
 
-        <Button variant="outline" size="icon-sm" onClick={onExpandAll} title="Expand all">
+        <Button variant="outline" size="icon-sm" onClick={onExpandAll} title="Expand all" disabled={viewMode === "graph"}>
           <IconChevronsDown className="size-4" />
         </Button>
-        <Button variant="outline" size="icon-sm" onClick={onCollapseAll} title="Collapse all">
+        <Button variant="outline" size="icon-sm" onClick={onCollapseAll} title="Collapse all" disabled={viewMode === "graph"}>
           <IconChevronsUp className="size-4" />
         </Button>
       </div>

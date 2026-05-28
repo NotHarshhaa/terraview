@@ -172,6 +172,61 @@ func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.withUI(snap))
 }
 
+// handleWorkspaces lists Terraform workspaces Terraview can switch to.
+func (s *Server) handleWorkspaces(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", "GET")
+		writeError(w, http.StatusMethodNotAllowed, "use GET")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"current":     s.poller.CurrentWorkspace(),
+		"workspaces":  s.poller.Workspaces(),
+	})
+}
+
+// handleWorkspace switches the active Terraform workspace without restarting.
+func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		writeError(w, http.StatusMethodNotAllowed, "use POST")
+		return
+	}
+	var body struct {
+		Workspace string `json:"workspace"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	ws := strings.TrimSpace(body.Workspace)
+	if ws == "" {
+		writeError(w, http.StatusBadRequest, "workspace is required")
+		return
+	}
+	snap, err := s.poller.SetWorkspace(r.Context(), ws)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, s.withUI(snap))
+}
+
+// handleGraph returns the dependency graph for the active workspace snapshot.
+func (s *Server) handleGraph(w http.ResponseWriter, r *http.Request) {
+	snap, err := s.poller.Snapshot()
+	if snap == nil {
+		writeError(w, http.StatusServiceUnavailable, errorMsgOrDefault(err, "snapshot not ready yet"))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"generated_at":         snap.GeneratedAt,
+		"terraform_workspace":  snap.TerraformWorkspace,
+		"dependency_graph":     snap.DependencyGraph,
+		"resource_count":       len(snap.Resources),
+	})
+}
+
 // handleRefresh forces an out-of-band snapshot refresh. The caller blocks
 // until the refresh completes, so a manual "Refresh" button feels
 // synchronous from the user's point of view.

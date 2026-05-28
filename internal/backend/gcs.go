@@ -25,7 +25,11 @@ func NewGCS(cfg Config) (*GCSBackend, error) {
 	if key == "" {
 		key = "default.tfstate"
 	}
-	return &GCSBackend{bucket: cfg.Bucket, object: key}, nil
+	ws := cfg.Workspace
+	if ws == "" {
+		ws = DefaultWorkspace
+	}
+	return &GCSBackend{bucket: cfg.Bucket, object: workspaceStateKey(key, ws)}, nil
 }
 
 func (g *GCSBackend) LoadState(ctx context.Context) (io.ReadCloser, error) {

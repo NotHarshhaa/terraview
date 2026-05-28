@@ -13,6 +13,7 @@ import { AuthGate } from "@/components/auth-gate";
 import { CommandPalette } from "@/components/command-palette";
 import { CopyText } from "@/components/copy-button";
 import { ErrorsBanner } from "@/components/errors-banner";
+import { DependencyGraphView } from "@/components/dependency-graph";
 import { ExportMenu } from "@/components/export-menu";
 import { buildFilterChips, FilterChips } from "@/components/filter-chips";
 import { FilterSidebar } from "@/components/filter-sidebar";
@@ -25,6 +26,7 @@ import { StateInfoBar } from "@/components/state-info-bar";
 import { useDashboardHotkeys } from "@/components/shortcuts-sheet";
 import { useToast } from "@/components/toast-provider";
 import { ViewToolbar } from "@/components/view-toolbar";
+import { WorkspaceSwitcher } from "@/components/workspace-switcher";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -71,6 +73,7 @@ const GROUP_BY_KEY = "terraview_group_by";
 const DENSITY_KEY = "terraview_density";
 const SORT_KEY = "terraview_sort_key";
 const SORT_DIR_KEY = "terraview_sort_dir";
+const VIEW_MODE_KEY = "terraview_view_mode";
 
 export function Dashboard() {
   const { toast } = useToast();
@@ -90,6 +93,8 @@ export function Dashboard() {
     signOut,
     version,
     headline,
+    switchWorkspace,
+    switchingWorkspace,
   } = useSnapshot();
 
   const [filters, setFilters] = React.useState<FilterState>(() => {
@@ -106,6 +111,8 @@ export function Dashboard() {
   const [sortKey, setSortKey] = React.useState<SortKey>("name");
   const [sortDir, setSortDir] = React.useState<SortDir>("asc");
   const [density, setDensity] = React.useState<Density>("comfortable");
+  const [viewMode, setViewMode] = React.useState<"grid" | "graph">("grid");
+  const graphRefreshed = React.useRef(false);
   const [savedViews, setSavedViews] = React.useState<SavedView[]>([]);
   const [detailResource, setDetailResource] = React.useState<Resource | null>(null);
   const [detailOpen, setDetailOpen] = React.useState(false);
@@ -138,6 +145,8 @@ export function Dashboard() {
     }
     const sd = localStorage.getItem(SORT_DIR_KEY);
     if (sd === "asc" || sd === "desc") setSortDir(sd);
+    const vm = localStorage.getItem(VIEW_MODE_KEY);
+    if (vm === "grid" || vm === "graph") setViewMode(vm);
   }, []);
 
   React.useEffect(() => {
@@ -190,6 +199,12 @@ export function Dashboard() {
     const qs = params.toString();
     router.replace(qs ? `/?${qs}` : "/", { scroll: false });
   }, [filters, groupBy, activeStatuses, router]);
+
+  React.useEffect(() => {
+    if (viewMode !== "graph" || graphRefreshed.current) return;
+    graphRefreshed.current = true;
+    void refresh();
+  }, [viewMode, refresh]);
 
   const showCostColumn = snapshot?.ui?.show_cost_column ?? false;
   const pageTitle = snapshot?.ui?.title?.trim() || "Terraview";
@@ -324,6 +339,18 @@ export function Dashboard() {
     onShowShortcuts: () => setShortcutsOpen(true),
   });
 
+  const handleWorkspaceSwitch = React.useCallback(
+    async (workspace: string) => {
+      try {
+        await switchWorkspace(workspace);
+        toast(`Switched to workspace “${workspace}”`);
+      } catch (err) {
+        toast(err instanceof Error ? err.message : "Could not switch workspace");
+      }
+    },
+    [switchWorkspace, toast],
+  );
+
   const activeCount =
     filterActiveCount(filters) + activeStatuses.size;
 
@@ -428,6 +455,15 @@ export function Dashboard() {
         onSignOut={signOut}
         onOpenCommand={() => setCommandOpen(true)}
         onShowShortcuts={() => setShortcutsOpen(true)}
+        workspaceSwitcher={
+          <WorkspaceSwitcher
+            current={snapshot?.terraform_workspace ?? "default"}
+            workspaces={snapshot?.available_workspaces}
+            switching={switchingWorkspace}
+            onSwitch={(ws) => void handleWorkspaceSwitch(ws)}
+            className="hidden w-[9rem] sm:flex"
+          />
+        }
         exportMenu={
           snapshot ? (
             <ExportMenu
@@ -510,6 +546,7 @@ export function Dashboard() {
                 backendType={snapshot.backend_type}
                 stateSerial={snapshot.state_serial}
                 stateModifiedAt={snapshot.state_modified_at}
+                terraformWorkspace={snapshot.terraform_workspace}
               />
               <div className="grid gap-4 lg:grid-cols-[1fr_16rem]">
                 <StatusChart
@@ -546,6 +583,11 @@ export function Dashboard() {
               <FilterChips chips={filterChips} onClearAll={clearFilters} />
               <ErrorsBanner errors={snapshot.errors} />
               <ViewToolbar
+                viewMode={viewMode}
+                onViewModeChange={(mode) => {
+                  setViewMode(mode);
+                  localStorage.setItem(VIEW_MODE_KEY, mode);
+                }}
                 groupBy={groupBy}
                 onGroupByChange={setGroupByMode}
                 sortKey={sortKey}
@@ -571,15 +613,23 @@ export function Dashboard() {
                 }
                 resourceCount={filtered.length}
               />
-              <ResourceGrid
-                resources={filtered}
-                totalBeforeFilter={sidebarFiltered.length}
-                showCostColumn={showCostColumn}
-                groupBy={groupBy}
-                density={density}
-                onViewDetails={openDetails}
-                gridSignal={gridSignal}
-              />
+              {viewMode === "graph" ? (
+                <DependencyGraphView
+                  resources={resources}
+                  graph={snapshot.dependency_graph ?? { edges: [] }}
+                  onSelectResource={openDetails}
+                />
+              ) : (
+                <ResourceGrid
+                  resources={filtered}
+                  totalBeforeFilter={sidebarFiltered.length}
+                  showCostColumn={showCostColumn}
+                  groupBy={groupBy}
+                  density={density}
+                  onViewDetails={openDetails}
+                  gridSignal={gridSignal}
+                />
+              )}
               <footer className="space-y-1 pt-2 text-center text-xs text-muted-foreground">
                 <CopyText
                   value={snapshot.working_dir}

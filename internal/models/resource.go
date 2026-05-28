@@ -98,6 +98,26 @@ type Resource struct {
 	// DriftAttributes lists attribute keys that differ from provider reality
 	// when drift was detected in a plan JSON file.
 	DriftAttributes []string `json:"drift_attributes,omitempty"`
+
+	// DependsOn lists upstream resource addresses this resource depends on.
+	DependsOn []string `json:"depends_on,omitempty"`
+}
+
+// WorkspaceInfo describes a Terraform workspace Terraview can load.
+type WorkspaceInfo struct {
+	Name    string `json:"name"`
+	Current bool   `json:"current,omitempty"`
+}
+
+// DependencyEdge is a directed edge in the resource dependency graph (from → to).
+type DependencyEdge struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
+// DependencyGraph is the full dependency graph for the current snapshot.
+type DependencyGraph struct {
+	Edges []DependencyEdge `json:"edges"`
 }
 
 // UISettings carries dashboard options from .terraview.yaml into the API
@@ -125,6 +145,15 @@ type Snapshot struct {
 
 	// StateModifiedAt is when the state file was last modified on the backend.
 	StateModifiedAt time.Time `json:"state_modified_at,omitempty"`
+
+	// TerraformWorkspace is the active Terraform workspace for this snapshot.
+	TerraformWorkspace string `json:"terraform_workspace,omitempty"`
+
+	// AvailableWorkspaces lists workspaces the UI can switch to.
+	AvailableWorkspaces []WorkspaceInfo `json:"available_workspaces,omitempty"`
+
+	// DependencyGraph contains directed dependency edges between resources.
+	DependencyGraph DependencyGraph `json:"dependency_graph,omitempty"`
 }
 
 // Summary is a pre-aggregated count of statuses for the summary bar at the top

@@ -6,7 +6,13 @@
 
 import * as React from "react";
 
-import type { FacetsPayload, Resource, Snapshot, StatusPayload } from "./types";
+import type {
+  FacetsPayload,
+  Resource,
+  Snapshot,
+  StatusPayload,
+  WorkspaceInfo,
+} from "./types";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_TERRAVIEW_API?.replace(/\/$/, "") ?? "";
@@ -105,6 +111,20 @@ export async function fetchSnapshot(): Promise<Snapshot> {
   return fetchJSON<Snapshot>("/api/snapshot");
 }
 
+export async function fetchWorkspaces(): Promise<{
+  current: string;
+  workspaces: WorkspaceInfo[];
+}> {
+  return fetchJSON("/api/workspaces");
+}
+
+export async function activateWorkspace(workspace: string): Promise<Snapshot> {
+  return fetchJSON<Snapshot>("/api/workspace", {
+    method: "POST",
+    body: JSON.stringify({ workspace }),
+  });
+}
+
 export async function fetchHealth(): Promise<{ version?: string; status?: string }> {
   return fetchJSON("/api/health");
 }
@@ -158,6 +178,7 @@ export function useSnapshot() {
     connectionState: "connecting",
   });
   const [refreshing, setRefreshing] = React.useState(false);
+  const [switchingWorkspace, setSwitchingWorkspace] = React.useState(false);
   const [version, setVersion] = React.useState<string | null>(null);
   const [headline, setHeadline] = React.useState<string | null>(null);
   const loadGen = React.useRef(0);
@@ -287,6 +308,36 @@ export function useSnapshot() {
     }
   }, []);
 
+  const switchWorkspace = React.useCallback(async (workspace: string) => {
+    const gen = ++loadGen.current;
+    setSwitchingWorkspace(true);
+    try {
+      const snap = await activateWorkspace(workspace);
+      if (gen !== loadGen.current) return;
+      setState((prev) => ({
+        snapshot: snap,
+        loading: false,
+        error: null,
+        hasLoaded: true,
+        authRequired: snap.ui?.auth_required ?? false,
+        unauthorized: false,
+        connectionState: prev.connectionState,
+      }));
+      void fetchStatus()
+        .then((s) => setHeadline(s.headline || null))
+        .catch(() => setHeadline(null));
+    } catch (err) {
+      if (gen !== loadGen.current) return;
+      const message = err instanceof Error ? err.message : String(err);
+      setState((prev) => ({ ...prev, error: message }));
+      throw err;
+    } finally {
+      if (gen === loadGen.current) {
+        setSwitchingWorkspace(false);
+      }
+    }
+  }, []);
+
   const signIn = React.useCallback(
     async (username: string, password: string) => {
       const result = await login(username, password);
@@ -314,5 +365,16 @@ export function useSnapshot() {
     void load();
   }, [load]);
 
-  return { ...state, refresh, refreshing, signIn, signOut, reload: load, version, headline } as const;
+  return {
+    ...state,
+    refresh,
+    refreshing,
+    switchWorkspace,
+    switchingWorkspace,
+    signIn,
+    signOut,
+    reload: load,
+    version,
+    headline,
+  } as const;
 }

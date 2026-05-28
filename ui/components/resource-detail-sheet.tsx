@@ -6,6 +6,7 @@ import {
   IconExternalLink,
   IconInfoCircle,
   IconListDetails,
+  IconShare3,
   IconTag,
   IconTerminal2,
 } from "@tabler/icons-react";
@@ -144,6 +145,18 @@ export function ResourceDetailSheet({
                     </Badge>
                   ))}
                 </div>
+              </DetailSection>
+            ) : null}
+
+            {resource.depends_on && resource.depends_on.length > 0 ? (
+              <DetailSection icon={IconShare3} title="Depends on">
+                <ul className="space-y-1.5 text-xs">
+                  {resource.depends_on.map((dep) => (
+                    <li key={dep}>
+                      <CopyText value={dep} mono className="text-muted-foreground" />
+                    </li>
+                  ))}
+                </ul>
               </DetailSection>
             ) : null}
 

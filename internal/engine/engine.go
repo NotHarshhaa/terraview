@@ -41,6 +41,7 @@ type StateTimestamper interface {
 type Options struct {
 	WorkingDir string      // Terraform project root (where .tf files live).
 	Backend    StateLoader // Where to read state from.
+	Workspace  string      // Terraform workspace name (default, dev, prod, …).
 
 	// PlanPath, when non-empty, points at a `terraform show -json plan.tfplan`
 	// file Terraview should ingest to know what's pending. The GitHub Actions
@@ -77,6 +78,11 @@ func (e *Engine) Refresh(ctx context.Context, opts Options) (*models.Snapshot, e
 	}
 	if opts.Backend != nil {
 		snap.BackendType = opts.Backend.Type()
+	}
+	if ws := strings.TrimSpace(opts.Workspace); ws != "" {
+		snap.TerraformWorkspace = ws
+	} else {
+		snap.TerraformWorkspace = "default"
 	}
 
 	hcl := ParseHCLDir(opts.WorkingDir)
@@ -149,6 +155,7 @@ func (e *Engine) Refresh(ctx context.Context, opts Options) (*models.Snapshot, e
 	resources := mergeAndClassify(hcl.Resources, stateResources, planResources)
 	snap.Resources = resources
 	snap.Summary = summarise(resources)
+	snap.DependencyGraph = BuildDependencyGraph(resources)
 	return snap, nil
 }
 
@@ -217,6 +224,9 @@ func mergeAndClassify(decls []DeclaredResource, states []StateResource, plans []
 		if plan != nil && plan.Action != PlanActionNoOp && plan.Action != PlanActionRead {
 			r.PlanAction = string(plan.Action)
 		}
+		if deps := mergeDependsOn(state, decl); len(deps) > 0 {
+			r.DependsOn = deps
+		}
 		out = append(out, r)
 	}
 
@@ -277,11 +287,13 @@ func pickAttributes(attrs map[string]any) map[string]string {
 		return nil
 	}
 	wanted := []string{
+		"id",
 		"instance_type", "ami", "region", "availability_zone",
 		"engine", "engine_version", "instance_class", "allocated_storage",
 		"machine_type", "tier",
 		"bucket", "name",
 		"cidr_block",
+		"vpc_id", "subnet_id", "security_group_id",
 		"runtime", "handler",
 		"namespace",
 		"image", "image_id",

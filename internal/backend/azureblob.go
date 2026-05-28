@@ -31,10 +31,14 @@ func NewAzureBlob(cfg Config) (*AzureBlobBackend, error) {
 	if key == "" {
 		key = "terraform.tfstate"
 	}
+	ws := cfg.Workspace
+	if ws == "" {
+		ws = DefaultWorkspace
+	}
 	return &AzureBlobBackend{
 		account:   cfg.StorageAccount,
 		container: cfg.Container,
-		blob:      key,
+		blob:      workspaceStateKey(key, ws),
 	}, nil
 }
 

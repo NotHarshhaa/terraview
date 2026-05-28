@@ -55,6 +55,8 @@ Terraview reads your Terraform project — `.tf` files, state backend, and optio
 - **Eight lifecycle statuses** — `created`, `inactive`, `pending_create`, `pending_update`, `pending_destroy`, `drifted`, `unmanaged`, `unknown`
 - **Auto-categorization** — AWS / GCP / Azure / Kubernetes → Compute, Networking, Databases, Storage, IAM, Serverless, …
 - **Module-aware** — shows module path per resource
+- **Multi-workspace support** — switch between `default`, `dev`, `staging`, `prod` (and remote workspaces) from the UI without restarting the server; snapshots are cached per workspace
+- **Resource dependency graph** — directed graph built from state `depends_on` and HCL references; toggle **Graph** view in the dashboard
 - **Live polling** — background refresh (default 30s) + SSE push to the UI
 - **CI mode** — `terraview status` prints JSON or Markdown; exit code `2` when drift is detected
 
@@ -69,7 +71,9 @@ Terraview reads your Terraform project — `.tf` files, state backend, and optio
 - **Group by service or module** — toggle grid grouping; preference saved locally
 - **Sort & density** — sort by name, status, type, or address; compact row mode
 - **Collapsible groups** — expand/collapse all resource sections
-- **Resource detail sheet** — full metadata, tags, copy address, Terraform CLI hints, plan action & drift attributes
+- **Resource detail sheet** — full metadata, tags, copy address, Terraform CLI hints, plan action & drift attributes, upstream dependencies
+- **Dependency graph view** — readable SVG layout of resource dependencies (toggle Grid / Graph in the toolbar)
+- **Workspace switcher** — pick a Terraform workspace from the header; uses `terraform.tfstate.d/<workspace>/` locally or `env:/<workspace>/` on remote backends
 - **Provider breakdown chart** — clickable bar chart by cloud provider
 - **State info bar** — state serial and last-modified timestamp from backend
 - **CI headline in header** — live status summary from `/api/status`
@@ -89,7 +93,10 @@ Terraview reads your Terraform project — `.tf` files, state backend, and optio
 | Endpoint | Description |
 |---|---|
 | `GET /api/health` | Liveness + version |
-| `GET /api/snapshot` | Full snapshot (resources, summary, UI config) |
+| `GET /api/snapshot` | Full snapshot (resources, summary, UI config, dependency graph) |
+| `GET /api/workspaces` | List Terraform workspaces + active workspace |
+| `POST /api/workspace` | Switch active workspace (`{"workspace":"dev"}`) |
+| `GET /api/graph` | Dependency graph for the active workspace |
 | `GET /api/resources` | Filtered resource list (`?status=&provider=&module=&category=&tag=&q=&limit=&offset=`) |
 | `GET /api/resource` | Single resource by address (`?address=aws_instance.web`) |
 | `GET /api/facets` | Filter facet counts (optionally pre-filtered) |
