@@ -17,7 +17,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  REGISTRY: ghcr.io
+  GHCR_IMAGE: ghcr.io/notharshhaa/terraview
+  DOCKERHUB_IMAGE: docker.io/harshhaareddy/terraview
 
 permissions:
   contents: read
@@ -25,10 +26,24 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    name: build (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Prepare platform
+        run: |
+          platform=${{ matrix.platform }}
+          echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -36,21 +51,15 @@ jobs:
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GH_TOKEN }}
 
-      - name: Docker metadata
+      - name: Docker metadata (labels)
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository }}
-          tags: |
-            type=semver,pattern={{version}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-            type=semver,pattern={{major}}.{{minor}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-            type=semver,pattern={{major}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') || inputs.publish_latest == true }}
-            type=sha,prefix=sha-,enable=${{ github.event_name == 'workflow_dispatch' }}
+          images: ${{ env.GHCR_IMAGE }}
 
       - name: Resolve version
         id: version
@@ -61,26 +70,129 @@ jobs:
             echo "value=${{ github.sha }}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build and push
+      - name: Build and push by digest
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
+          platforms: ${{ matrix.platform }}
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=${{ env.GHCR_IMAGE }},push-by-digest=true,name-canonical=true
           build-args: |
             VERSION=${{ steps.version.outputs.value }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha,scope=${{ env.PLATFORM_PAIR }}
+          cache-to: type=gha,mode=max,scope=${{ env.PLATFORM_PAIR }}
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ env.PLATFORM_PAIR }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: merge manifests
+    runs-on: ubuntu-24.04
+    needs: build
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GH_TOKEN }}
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.GHCR_IMAGE }}
+            ${{ env.DOCKERHUB_IMAGE }}
+          tags: |
+            type=semver,pattern={{version}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=semver,pattern={{major}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') || inputs.publish_latest == true }}
+            type=sha,prefix=sha-,enable=${{ github.event_name == 'workflow_dispatch' }}
+
+      - name: Create GHCR manifest
+        working-directory: /tmp/digests
+        env:
+          DOCKER_METADATA_OUTPUT_JSON: ${{ steps.meta.outputs.json }}
+        run: |
+          ghcr_tags=$(jq -cr '[.tags[] | select(startswith("ghcr.io")) | "-t " + .] | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          # shellcheck disable=SC2086
+          docker buildx imagetools create ${ghcr_tags} \
+            $(printf '${{ env.GHCR_IMAGE }}@sha256:%s ' *)
+
+      - name: Mirror to Docker Hub
+        env:
+          DOCKER_METADATA_OUTPUT_JSON: ${{ steps.meta.outputs.json }}
+        run: |
+          mapfile -t ghcr_tags < <(jq -r '.tags[] | select(startswith("ghcr.io"))' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          if [[ ${#ghcr_tags[@]} -eq 0 ]]; then
+            echo "No GHCR tags found in metadata"
+            exit 1
+          fi
+          src="${ghcr_tags[0]}"
+          args=()
+          for tag in "${ghcr_tags[@]}"; do
+            suffix="${tag##*:}"
+            args+=("-t" "${{ env.DOCKERHUB_IMAGE }}:${suffix}")
+          done
+          docker buildx imagetools create "${args[@]}" "$src"
 
       - name: Image summary
+        env:
+          DOCKER_METADATA_OUTPUT_JSON: ${{ steps.meta.outputs.json }}
         run: |
-          echo "### Published image" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Published images (linux/amd64 + linux/arm64)" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Built on native runners, merged with \`docker buildx imagetools\`." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**GHCR**" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          echo "${{ steps.meta.outputs.tags }}" >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.tags[] | select(startswith("ghcr.io"))' <<< "$DOCKER_METADATA_OUTPUT_JSON" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Pull: \`docker pull ghcr.io/${{ github.repository }}:latest\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Docker Hub**" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.tags[] | select(startswith("docker.io"))' <<< "$DOCKER_METADATA_OUTPUT_JSON" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Pull:" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`docker pull ${{ env.GHCR_IMAGE }}:latest\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`docker pull ${{ env.DOCKERHUB_IMAGE }}:latest\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Inspect multi-arch manifest
+        env:
+          META_JSON: ${{ steps.meta.outputs.json }}
+        run: |
+          tag=$(jq -r '.tags[] | select(startswith("ghcr.io"))' <<< "$META_JSON" | head -1)
+          docker buildx imagetools inspect "$tag"
