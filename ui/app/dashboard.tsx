@@ -553,7 +553,7 @@ export function Dashboard() {
         }}
       />
 
-      <div className="mx-auto flex w-full max-w-7xl gap-6 px-4 py-6">
+      <div className="mx-auto flex w-full max-w-screen-2xl gap-6 px-6 py-6 lg:px-8">
         <div className="hidden w-64 shrink-0 lg:block">
           <div className="sticky top-[60px] h-[calc(100svh-72px)]">
             {filterSidebar}

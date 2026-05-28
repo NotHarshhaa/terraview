@@ -25,7 +25,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Separator } from "@/components/ui/separator";
 import {
   Tooltip,
   TooltipContent,
@@ -79,12 +78,12 @@ export function Header({
 
   return (
     <header className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-      <div className="mx-auto max-w-7xl px-4">
-        <div className="flex h-14 items-center gap-3">
-          <div className="flex min-w-0 items-center gap-2.5">
+      <div className="mx-auto w-full max-w-screen-2xl px-6 lg:px-8">
+        <div className="flex min-h-16 items-center gap-4 py-3">
+          <div className="flex min-w-0 items-center gap-3">
             <TerraviewMark />
             <div className="min-w-0">
-              <p className="truncate font-heading text-sm font-semibold tracking-wider uppercase">
+              <p className="truncate font-heading text-sm font-semibold tracking-wider uppercase lg:text-base">
                 {title}
               </p>
               {relative ? (
@@ -95,24 +94,7 @@ export function Header({
             </div>
           </div>
 
-          <Separator
-            orientation="vertical"
-            className="hidden h-6 lg:block"
-          />
-
-          <HeaderMeta
-            className="hidden min-w-0 flex-1 lg:flex"
-            backendType={backendType}
-            backendProvider={backendProvider}
-            connectionState={connectionState}
-            headline={headline}
-            relative={relative}
-            version={version}
-            resourceCount={resourceCount}
-            totalResources={totalResources}
-          />
-
-          <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
             {workspaceSwitcher}
             {mobileFilters}
 
@@ -232,10 +214,19 @@ export function Header({
                   size="sm"
                   onClick={onRefresh}
                   disabled={refreshing}
-                  className="gap-1.5"
+                  aria-busy={refreshing}
+                  data-refreshing={refreshing ? "true" : "false"}
+                  className={cn(
+                    "terraview-refresh-btn gap-1.5 transition-shadow",
+                    refreshing && "disabled:opacity-100",
+                  )}
                 >
                   <IconRefresh
-                    className={cn("size-3.5", refreshing && "animate-spin")}
+                    className={cn(
+                      "terraview-refresh-icon size-3.5",
+                      refreshing && "motion-reduce:animate-none",
+                    )}
+                    data-refreshing={refreshing ? "true" : "false"}
                     aria-hidden
                   />
                   <span className="hidden sm:inline">
@@ -243,13 +234,15 @@ export function Header({
                   </span>
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Refresh snapshot (r)</TooltipContent>
+              <TooltipContent>
+                {refreshing ? "Refreshing snapshot…" : "Refresh snapshot (r)"}
+              </TooltipContent>
             </Tooltip>
           </div>
         </div>
 
         <HeaderMeta
-          className="flex flex-wrap items-center gap-2 pb-3 lg:hidden"
+          className="flex flex-wrap items-center gap-2.5 border-t border-border/40 pb-4 pt-3 lg:gap-3"
           backendType={backendType}
           backendProvider={backendProvider}
           connectionState={connectionState}
@@ -258,7 +251,7 @@ export function Header({
           version={version}
           resourceCount={resourceCount}
           totalResources={totalResources}
-          compact
+          compact={false}
         />
       </div>
     </header>
@@ -267,7 +260,7 @@ export function Header({
 
 function TerraviewMark() {
   return (
-    <div className="flex size-8 shrink-0 items-center justify-center border bg-card shadow-sm ring-1 ring-foreground/5">
+    <div className="flex size-9 shrink-0 items-center justify-center border bg-card shadow-sm ring-1 ring-foreground/5">
       <svg viewBox="0 0 24 24" className="size-4 text-primary" aria-hidden>
         <path
           fill="currentColor"
@@ -305,7 +298,7 @@ function HeaderMeta({
     resourceCount !== undefined && totalResources !== undefined;
 
   return (
-    <div className={cn("items-center gap-2", className)}>
+    <div className={cn("items-center gap-2.5 lg:gap-3", className)}>
       <ConnectionBadge state={connectionState} />
 
       {backendType ? (
@@ -333,8 +326,10 @@ function HeaderMeta({
       {headline ? (
         <span
           className={cn(
-            "truncate text-xs text-muted-foreground",
-            compact ? "max-w-full basis-full" : "max-w-md",
+            "text-xs text-muted-foreground lg:text-sm",
+            compact
+              ? "max-w-full basis-full truncate"
+              : "min-w-0 flex-1 truncate lg:max-w-none lg:basis-auto",
           )}
           title={headline}
         >

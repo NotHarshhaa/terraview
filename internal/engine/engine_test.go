@@ -37,15 +37,41 @@ func TestSampleProject(t *testing.T) {
 	}
 
 	want := map[string]models.Status{
-		"aws_vpc.main":                     models.StatusCreated,
-		"aws_subnet.private_a":             models.StatusCreated,
-		"aws_security_group.alb":           models.StatusUnmanaged,
-		"aws_instance.web_server":          models.StatusCreated,
-		"aws_instance.bastion":             models.StatusInactive,
-		"aws_rds_instance.postgres":        models.StatusCreated,
-		"aws_s3_bucket.assets":             models.StatusCreated,
-		"aws_iam_role.ec2":                 models.StatusCreated,
-		"aws_lambda_function.image_resize": models.StatusCreated,
+		"aws_vpc.main":                              models.StatusCreated,
+		"aws_subnet.private_a":                      models.StatusCreated,
+		"aws_security_group.alb":                    models.StatusUnmanaged,
+		"aws_instance.web_server":                   models.StatusCreated,
+		"aws_instance.bastion":                      models.StatusInactive,
+		"aws_rds_instance.postgres":                 models.StatusCreated,
+		"aws_s3_bucket.assets":                      models.StatusCreated,
+		"aws_iam_role.ec2":                          models.StatusCreated,
+		"aws_lambda_function.image_resize":          models.StatusCreated,
+		"google_compute_network.main":               models.StatusCreated,
+		"google_compute_instance.app":               models.StatusCreated,
+		"google_storage_bucket.data":                models.StatusCreated,
+		"azurerm_resource_group.core":               models.StatusCreated,
+		"azurerm_linux_virtual_machine.web":         models.StatusInactive,
+		"azurerm_storage_account.logs":              models.StatusCreated,
+		"kubernetes_namespace.app":                  models.StatusCreated,
+		"kubernetes_deployment.api":                 models.StatusCreated,
+		"cloudflare_zone.main":                      models.StatusCreated,
+		"cloudflare_record.www":                     models.StatusUnmanaged,
+	}
+
+	if snap.Summary.Total < len(want) {
+		t.Errorf("summary total = %d, want at least %d resources", snap.Summary.Total, len(want))
+	}
+	if snap.Summary.ByProvider["AWS"] == 0 {
+		t.Error("expected AWS resources in summary")
+	}
+	if snap.Summary.ByProvider["GCP"] == 0 {
+		t.Error("expected GCP resources in summary")
+	}
+	if snap.Summary.ByProvider["Azure"] == 0 {
+		t.Error("expected Azure resources in summary")
+	}
+	if snap.Summary.ByProvider["Kubernetes"] == 0 {
+		t.Error("expected Kubernetes resources in summary")
 	}
 
 	got := map[string]models.Status{}

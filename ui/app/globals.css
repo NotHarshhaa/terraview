@@ -156,3 +156,41 @@
 .dark .terraview-flow .terraview-dep-edge .react-flow__edge-path {
   stroke: oklch(0.72 0.02 285);
 }
+
+@keyframes terraview-refresh-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes terraview-refresh-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--primary-foreground) 0%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary-foreground) 28%, transparent);
+  }
+}
+
+.terraview-refresh-btn[data-refreshing="true"] {
+  animation: terraview-refresh-pulse 1.2s ease-in-out infinite;
+  cursor: wait;
+  opacity: 1;
+  pointer-events: none;
+}
+
+.terraview-refresh-icon[data-refreshing="true"] {
+  animation: terraview-refresh-spin 0.75s linear infinite;
+  transform-origin: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .terraview-refresh-btn[data-refreshing="true"],
+  .terraview-refresh-icon[data-refreshing="true"] {
+    animation: none;
+  }
+}

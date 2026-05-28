@@ -14,8 +14,10 @@ terraform {
 resource "aws_vpc" "main" {
   cidr_block = "10.0.0.0/16"
   tags = {
-    Name = "demo-vpc"
-    env  = "dev"
+    Name        = "demo-vpc"
+    Environment = "production"
+    Team        = "platform"
+    Owner       = "infra"
   }
 }
 
@@ -36,8 +38,11 @@ resource "aws_instance" "web_server" {
   subnet_id     = aws_subnet.private_a.id
 
   tags = {
-    Name = "web-server"
-    role = "web"
+    Name        = "web-server"
+    role        = "web"
+    Environment = "production"
+    Team        = "platform"
+    Owner       = "app-team"
   }
 }
 
@@ -46,7 +51,10 @@ resource "aws_instance" "bastion" {
   instance_type = "t2.micro"
 
   tags = {
-    Name = "bastion"
+    Name        = "bastion"
+    Environment = "production"
+    Team        = "platform"
+    Owner       = "infra"
   }
 }
 
