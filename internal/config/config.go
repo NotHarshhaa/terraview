@@ -31,8 +31,11 @@ type File struct {
 	Port         int            `yaml:"port"`
 	PollInterval time.Duration  `yaml:"poll_interval"`
 	WorkingDir   string         `yaml:"working_dir"`
-	PlanFile     string         `yaml:"plan_file"`
-	Backend      backend.Config `yaml:"backend"`
+	PlanFile           string         `yaml:"plan_file"`
+	DriftAutoCheck     bool           `yaml:"drift_auto_check"`
+	DriftCheckInterval time.Duration  `yaml:"drift_check_interval"`
+	TerraformBin       string         `yaml:"terraform_bin"`
+	Backend            backend.Config `yaml:"backend"`
 	UI           UI             `yaml:"ui"`
 	Auth         Auth           `yaml:"auth"`
 }
@@ -57,11 +60,12 @@ type Auth struct {
 // the starting point in Load so we never have to nil-check fields later.
 func Defaults() File {
 	return File{
-		Port:         7777,
-		PollInterval: 30 * time.Second,
-		WorkingDir:   ".",
-		Backend:      backend.Config{Type: "local"},
-		UI:           UI{Title: "Terraview"},
+		Port:               7777,
+		PollInterval:       30 * time.Second,
+		DriftCheckInterval: 5 * time.Minute,
+		WorkingDir:         ".",
+		Backend:            backend.Config{Type: "local"},
+		UI:                 UI{Title: "Terraview"},
 	}
 }
 
@@ -142,6 +146,17 @@ func applyEnv(cfg *File) {
 	}
 	if v := os.Getenv("TV_PLAN_FILE"); v != "" {
 		cfg.PlanFile = v
+	}
+	if v := os.Getenv("TV_DRIFT_AUTO_CHECK"); v != "" {
+		cfg.DriftAutoCheck = parseBool(v)
+	}
+	if v := os.Getenv("TV_DRIFT_CHECK_INTERVAL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.DriftCheckInterval = d
+		}
+	}
+	if v := os.Getenv("TV_TERRAFORM_BIN"); v != "" {
+		cfg.TerraformBin = v
 	}
 	if v := os.Getenv("TFE_TOKEN"); v != "" && cfg.Backend.Token == "" {
 		cfg.Backend.Token = v
@@ -271,6 +286,16 @@ func assign(cfg *File, path []string, val string) error {
 		cfg.WorkingDir = val
 	case "plan_file":
 		cfg.PlanFile = val
+	case "drift_auto_check":
+		cfg.DriftAutoCheck = parseBool(val)
+	case "drift_check_interval":
+		d, err := time.ParseDuration(val)
+		if err != nil {
+			return fmt.Errorf("drift_check_interval: %w", err)
+		}
+		cfg.DriftCheckInterval = d
+	case "terraform_bin":
+		cfg.TerraformBin = val
 	case "backend.type":
 		cfg.Backend.Type = val
 	case "backend.state_file":

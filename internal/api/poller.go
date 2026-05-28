@@ -17,9 +17,12 @@ import (
 
 // PollerConfig drives snapshot refresh for a Terraform project.
 type PollerConfig struct {
-	WorkingDir string
-	PlanPath   string
-	Backend    backend.Config
+	WorkingDir         string
+	PlanPath           string
+	Backend            backend.Config
+	DriftAutoCheck     bool
+	DriftCheckInterval time.Duration
+	TerraformBin       string
 }
 
 // Poller owns workspace-scoped snapshots and refreshes the active workspace on
@@ -32,8 +35,14 @@ type Poller struct {
 	period     time.Duration
 	logger     *log.Logger
 
+	driftAutoCheck bool
+	driftInterval  time.Duration
+	terraformBin   string
+	history        *engine.HistoryStore
+
 	mu         sync.RWMutex
 	refreshMu  sync.Mutex
+	driftMu    sync.Mutex
 	workspace  string
 	workspaces []models.WorkspaceInfo
 	cache      map[string]*models.Snapshot
@@ -49,6 +58,10 @@ func NewPoller(eng *engine.Engine, cfg PollerConfig, period time.Duration, logge
 	if period < 5*time.Second {
 		period = 5 * time.Second
 	}
+	driftInterval := cfg.DriftCheckInterval
+	if driftInterval <= 0 {
+		driftInterval = 5 * time.Minute
+	}
 	if logger == nil {
 		logger = log.Default()
 	}
@@ -57,15 +70,23 @@ func NewPoller(eng *engine.Engine, cfg PollerConfig, period time.Duration, logge
 		ws = backend.DefaultWorkspace
 	}
 	cfg.Backend.Workspace = ws
+	tfBin := strings.TrimSpace(cfg.TerraformBin)
+	if tfBin == "" {
+		tfBin = "terraform"
+	}
 	return &Poller{
-		engine:     eng,
-		baseOpts:   engine.Options{WorkingDir: cfg.WorkingDir, PlanPath: cfg.PlanPath},
-		backendCfg: cfg.Backend,
-		period:     period,
-		logger:     logger,
-		workspace:  ws,
-		cache:      map[string]*models.Snapshot{},
-		subs:       map[chan struct{}]struct{}{},
+		engine:         eng,
+		baseOpts:       engine.Options{WorkingDir: cfg.WorkingDir, PlanPath: cfg.PlanPath},
+		backendCfg:     cfg.Backend,
+		period:         period,
+		logger:         logger,
+		driftAutoCheck: cfg.DriftAutoCheck,
+		driftInterval:  driftInterval,
+		terraformBin:   tfBin,
+		history:        engine.NewHistoryStore(30),
+		workspace:      ws,
+		cache:          map[string]*models.Snapshot{},
+		subs:           map[chan struct{}]struct{}{},
 	}
 }
 
@@ -76,14 +97,41 @@ func (p *Poller) Run(ctx context.Context) {
 
 	ticker := time.NewTicker(p.period)
 	defer ticker.Stop()
+
+	var driftCh <-chan time.Time
+	var driftTicker *time.Ticker
+	if p.driftAutoCheck && p.baseOpts.PlanPath == "" {
+		driftTicker = time.NewTicker(p.driftInterval)
+		defer driftTicker.Stop()
+		driftCh = driftTicker.C
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			p.refreshOnce(ctx, p.workspace)
+			p.refreshOnce(ctx, p.CurrentWorkspace())
+		case <-driftCh:
+			p.driftCheckOnce(ctx, p.CurrentWorkspace())
 		}
 	}
+}
+
+// StateHistory returns recorded state versions for the active workspace.
+func (p *Poller) StateHistory() []models.StateVersionInfo {
+	p.mu.RLock()
+	ws := p.workspace
+	p.mu.RUnlock()
+	return p.history.Versions(ws)
+}
+
+// ResourceHistory returns lifecycle events for a resource in the active workspace.
+func (p *Poller) ResourceHistory(address string) []models.ResourceHistoryEvent {
+	p.mu.RLock()
+	ws := p.workspace
+	p.mu.RUnlock()
+	return p.history.ResourceTimeline(ws, address)
 }
 
 // CurrentWorkspace returns the active Terraform workspace name.
@@ -195,6 +243,7 @@ func (p *Poller) refreshOnce(ctx context.Context, workspace string) (*models.Sna
 
 	p.mu.Lock()
 	if err == nil {
+		snap.StateHistory = p.history.Record(workspace, snap.StateSerial, snap.Resources)
 		p.cache[workspace] = snap
 		if workspace == p.workspace {
 			p.lastErr = nil
@@ -214,6 +263,62 @@ func (p *Poller) refreshOnce(ctx context.Context, workspace string) (*models.Sna
 	return nil, err
 }
 
+func (p *Poller) driftCheckOnce(ctx context.Context, workspace string) {
+	if p.baseOpts.PlanPath != "" {
+		return
+	}
+	p.driftMu.Lock()
+	defer p.driftMu.Unlock()
+
+	checkCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+	defer cancel()
+
+	res, err := engine.RunDriftCheck(checkCtx, engine.DriftCheckOptions{
+		WorkingDir:   p.baseOpts.WorkingDir,
+		Workspace:    workspace,
+		TerraformBin: p.terraformBin,
+	})
+	if res.SkipReason != "" {
+		p.logger.Printf("drift check skipped (%s): %s", workspace, res.SkipReason)
+		p.touchDriftCheckedAt(workspace, res.CheckedAt)
+		return
+	}
+	if err != nil {
+		p.logger.Printf("drift check failed (%s): %v", workspace, err)
+		return
+	}
+
+	p.mu.Lock()
+	snap := p.cache[workspace]
+	if snap != nil {
+		updated := *snap
+		updated.DriftAlerts = nil
+		engine.ApplyDriftAlerts(&updated, res.Drift, res.CheckedAt)
+		p.cache[workspace] = &updated
+		active := workspace == p.workspace
+		p.mu.Unlock()
+		if active {
+			p.broadcast()
+		}
+		p.logger.Printf("drift check (%s): %d alert(s)", workspace, len(res.Drift))
+		return
+	}
+	p.mu.Unlock()
+}
+
+func (p *Poller) touchDriftCheckedAt(workspace string, at time.Time) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	snap := p.cache[workspace]
+	if snap == nil {
+		return
+	}
+	updated := *snap
+	t := at.UTC()
+	updated.DriftCheckedAt = &t
+	p.cache[workspace] = &updated
+}
+
 func (p *Poller) decorate(snap *models.Snapshot) *models.Snapshot {
 	if snap == nil {
 		return nil
@@ -226,6 +331,9 @@ func (p *Poller) decorate(snap *models.Snapshot) *models.Snapshot {
 	out := *snap
 	out.TerraformWorkspace = ws
 	out.AvailableWorkspaces = workspaces
+	if len(out.StateHistory) == 0 {
+		out.StateHistory = p.history.Versions(ws)
+	}
 	return &out
 }
 

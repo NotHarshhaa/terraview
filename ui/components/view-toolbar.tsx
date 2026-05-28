@@ -30,6 +30,9 @@ interface ViewToolbarProps {
   onViewModeChange: (mode: "grid" | "graph") => void;
   groupBy: GroupByMode;
   onGroupByChange: (mode: GroupByMode) => void;
+  tagGroupKey?: string;
+  tagGroupKeys?: string[];
+  onTagGroupKeyChange?: (key: string) => void;
   sortKey: SortKey;
   sortDir: SortDir;
   onSortKeyChange: (key: SortKey) => void;
@@ -46,6 +49,9 @@ export function ViewToolbar({
   onViewModeChange,
   groupBy,
   onGroupByChange,
+  tagGroupKey,
+  tagGroupKeys = [],
+  onTagGroupKeyChange,
   sortKey,
   sortDir,
   onSortKeyChange,
@@ -83,8 +89,27 @@ export function ViewToolbar({
             <TabsList>
               <TabsTrigger value="category">By service</TabsTrigger>
               <TabsTrigger value="module">By module</TabsTrigger>
+              <TabsTrigger value="tag">By tag</TabsTrigger>
             </TabsList>
           </Tabs>
+        ) : null}
+
+        {viewMode === "grid" && groupBy === "tag" && tagGroupKeys.length > 0 ? (
+          <Select
+            value={tagGroupKey ?? tagGroupKeys[0]}
+            onValueChange={(v) => onTagGroupKeyChange?.(v)}
+          >
+            <SelectTrigger size="sm" className="w-[9rem]">
+              <SelectValue placeholder="Tag key" />
+            </SelectTrigger>
+            <SelectContent>
+              {tagGroupKeys.map((k) => (
+                <SelectItem key={k} value={k}>
+                  {k}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         ) : null}
       </div>
 

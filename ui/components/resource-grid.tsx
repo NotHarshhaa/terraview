@@ -6,7 +6,7 @@
 
 import * as React from "react";
 
-import { IconChevronRight, IconFolderOpen } from "@tabler/icons-react";
+import { IconChevronRight, IconFolderOpen, IconTag } from "@tabler/icons-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,7 @@ interface ResourceGridProps {
   totalBeforeFilter: number;
   showCostColumn?: boolean;
   groupBy?: GroupByMode;
+  tagGroupKey?: string;
   density?: Density;
   onViewDetails?: (resource: Resource) => void;
   gridSignal?: { action: "expand" | "collapse"; seq: number } | null;
@@ -43,21 +44,30 @@ interface ModuleGroup {
   resources: Resource[];
 }
 
-type Group = CategoryGroup | ModuleGroup;
+interface TagGroup {
+  kind: "tag";
+  key: string;
+  label: string;
+  resources: Resource[];
+}
+
+type Group = CategoryGroup | ModuleGroup | TagGroup;
 
 export function ResourceGrid({
   resources,
   totalBeforeFilter,
   showCostColumn = false,
   groupBy = "category",
+  tagGroupKey = "Environment",
   density = "comfortable",
   onViewDetails,
   gridSignal,
 }: ResourceGridProps) {
-  const groups = React.useMemo(
-    () => (groupBy === "module" ? groupByModule(resources) : groupByCategory(resources)),
-    [resources, groupBy],
-  );
+  const groups = React.useMemo(() => {
+    if (groupBy === "module") return groupByModule(resources);
+    if (groupBy === "tag") return groupByTag(resources, tagGroupKey);
+    return groupByCategory(resources);
+  }, [resources, groupBy, tagGroupKey]);
 
   const [collapsed, setCollapsed] = React.useState<Set<string>>(new Set());
 
@@ -125,6 +135,14 @@ export function ResourceGrid({
                       <span className="truncate font-mono text-xs">
                         {group.module}
                       </span>
+                    </>
+                  ) : group.kind === "tag" ? (
+                    <>
+                      <IconTag
+                        className="size-4 shrink-0 text-muted-foreground"
+                        aria-hidden
+                      />
+                      <span className="truncate font-mono text-xs">{group.label}</span>
                     </>
                   ) : (
                     <>
@@ -203,4 +221,21 @@ function groupByModule(resources: Resource[]): ModuleGroup[] {
     g.resources.push(r);
   }
   return Array.from(map.values()).sort((a, b) => a.module.localeCompare(b.module));
+}
+
+function groupByTag(resources: Resource[], tagKey: string): TagGroup[] {
+  const key = tagKey.trim() || "Environment";
+  const map = new Map<string, TagGroup>();
+  for (const r of resources) {
+    const raw = r.tags?.[key];
+    const label = raw ? `${key}=${raw}` : `(no ${key})`;
+    const groupKey = raw ?? `(no ${key})`;
+    let g = map.get(groupKey);
+    if (!g) {
+      g = { kind: "tag", key: groupKey, label, resources: [] };
+      map.set(groupKey, g);
+    }
+    g.resources.push(r);
+  }
+  return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label));
 }

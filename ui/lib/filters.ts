@@ -5,7 +5,17 @@
 import type { Facet } from "@/components/filter-sidebar";
 import type { Resource, Status, Summary } from "@/lib/types";
 
-export type GroupByMode = "category" | "module";
+export type GroupByMode = "category" | "module" | "tag";
+
+export const DEFAULT_TAG_GROUP_KEYS = [
+  "Environment",
+  "environment",
+  "env",
+  "Team",
+  "team",
+  "Owner",
+  "owner",
+];
 
 export interface FilterState {
   search: string;
@@ -36,6 +46,29 @@ export function filterActiveCount(f: FilterState): number {
     f.tags.size +
     (f.search.trim() ? 1 : 0)
   );
+}
+
+export function detectTagGroupKeys(resources: Resource[]): string[] {
+  const counts = new Map<string, number>();
+  for (const r of resources) {
+    for (const k of Object.keys(r.tags ?? {})) {
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+  }
+  const keys: string[] = [];
+  for (const pref of DEFAULT_TAG_GROUP_KEYS) {
+    if (counts.has(pref)) keys.push(pref);
+  }
+  for (const [k, count] of [...counts.entries()].sort(
+    (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
+  )) {
+    if (!keys.includes(k)) keys.push(k);
+  }
+  return keys;
+}
+
+export function tagGroupKeyFromParams(params: URLSearchParams): string {
+  return params.get("tag_key")?.trim() ?? "";
 }
 
 export function filterResources(resources: Resource[], f: FilterState): Resource[] {
@@ -239,6 +272,7 @@ export function filtersFromSearchParams(params: URLSearchParams): FilterState {
 export function filtersToSearchParams(
   f: FilterState,
   groupBy: GroupByMode,
+  tagGroupKey?: string,
 ): URLSearchParams {
   const params = new URLSearchParams();
   if (f.search.trim()) params.set("q", f.search.trim());
@@ -248,11 +282,18 @@ export function filtersToSearchParams(
   if (f.modules.size) params.set("module", [...f.modules].join(","));
   if (f.tags.size) params.set("tag", [...f.tags].join(","));
   if (groupBy === "module") params.set("group", "module");
+  if (groupBy === "tag") {
+    params.set("group", "tag");
+    if (tagGroupKey?.trim()) params.set("tag_key", tagGroupKey.trim());
+  }
   return params;
 }
 
 export function groupByFromParams(params: URLSearchParams): GroupByMode {
-  return params.get("group") === "module" ? "module" : "category";
+  const group = params.get("group");
+  if (group === "module") return "module";
+  if (group === "tag") return "tag";
+  return "category";
 }
 
 export function resourceDomId(address: string): string {

@@ -51,6 +51,54 @@ func ParsePlanJSON(r io.Reader) ([]PlanResource, error) {
 	return res.Changes, nil
 }
 
+// ParseDriftPlanJSON parses a refresh-only plan and returns all drift findings.
+func ParseDriftPlanJSON(r io.Reader) (map[string]DriftInfo, error) {
+	raw, err := io.ReadAll(r)
+	if err != nil {
+		return nil, fmt.Errorf("read plan: %w", err)
+	}
+
+	var plan struct {
+		ResourceChanges []planChangeEntry `json:"resource_changes"`
+		ResourceDrift   []planChangeEntry `json:"resource_drift"`
+	}
+	if err := json.Unmarshal(raw, &plan); err != nil {
+		return nil, fmt.Errorf("parse plan: %w", err)
+	}
+
+	out := map[string]DriftInfo{}
+
+	mergeDriftEntry := func(rd planChangeEntry) {
+		if rd.Mode != "" && rd.Mode != "managed" {
+			return
+		}
+		attrs := diffAttributes(rd.Change.Before, rd.Change.After)
+		reason := "provider drift detected"
+		if len(attrs) > 0 {
+			reason = "drifted: " + strings.Join(attrs, ", ")
+		}
+		out[rd.Address] = DriftInfo{
+			Reason:       reason,
+			ChangedAttrs: attrs,
+		}
+	}
+
+	for _, rd := range plan.ResourceDrift {
+		mergeDriftEntry(rd)
+	}
+	for _, rc := range plan.ResourceChanges {
+		if rc.Mode != "" && rc.Mode != "managed" {
+			continue
+		}
+		action := collapseActions(rc.Change.Actions)
+		if action != PlanActionUpdate {
+			continue
+		}
+		mergeDriftEntry(rc)
+	}
+	return out, nil
+}
+
 // ParsePlanFull parses planned changes and the resource_drift section.
 func ParsePlanFull(r io.Reader) (PlanParseResult, error) {
 	raw, err := io.ReadAll(r)

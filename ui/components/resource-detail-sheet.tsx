@@ -30,6 +30,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useToast } from "@/components/toast-provider";
+import { ResourceHistorySection } from "@/components/resource-history-timeline";
 import { CloudResourceIcon } from "@/lib/cloud-icons";
 import { type Resource, PLAN_ACTION_META } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -203,6 +204,8 @@ export function ResourceDetailSheet({
                 </div>
               </DetailSection>
             ) : null}
+
+            <ResourceHistorySection address={resource.address} />
 
             <Separator />
 

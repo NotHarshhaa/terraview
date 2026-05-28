@@ -227,6 +227,43 @@ func (s *Server) handleGraph(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleHistory returns recorded state version summaries for the active workspace.
+func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"terraform_workspace": s.poller.CurrentWorkspace(),
+		"versions":            s.poller.StateHistory(),
+	})
+}
+
+// handleResourceHistory returns lifecycle events for a single resource address.
+func (s *Server) handleResourceHistory(w http.ResponseWriter, r *http.Request) {
+	address := strings.TrimSpace(r.URL.Query().Get("address"))
+	if address == "" {
+		writeError(w, http.StatusBadRequest, "address query parameter is required")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"terraform_workspace": s.poller.CurrentWorkspace(),
+		"address":             address,
+		"events":              s.poller.ResourceHistory(address),
+	})
+}
+
+// handleDriftAlerts returns drift alerts from the last refresh-only scan.
+func (s *Server) handleDriftAlerts(w http.ResponseWriter, r *http.Request) {
+	snap, err := s.poller.Snapshot()
+	if snap == nil {
+		writeError(w, http.StatusServiceUnavailable, errorMsgOrDefault(err, "snapshot not ready yet"))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"terraform_workspace": snap.TerraformWorkspace,
+		"drift_checked_at":    snap.DriftCheckedAt,
+		"alerts":              snap.DriftAlerts,
+		"count":               len(snap.DriftAlerts),
+	})
+}
+
 // handleRefresh forces an out-of-band snapshot refresh. The caller blocks
 // until the refresh completes, so a manual "Refresh" button feels
 // synchronous from the user's point of view.

@@ -67,6 +67,28 @@ export interface DependencyGraph {
   edges: DependencyEdge[];
 }
 
+export interface DriftAlert {
+  address: string;
+  reason: string;
+  attributes?: string[];
+  detected_at: string;
+}
+
+export interface StateVersionInfo {
+  serial: number;
+  recorded_at: string;
+  resource_count: number;
+  event_summary?: string;
+}
+
+export interface ResourceHistoryEvent {
+  at: string;
+  serial?: number;
+  action: "created" | "updated" | "destroyed" | string;
+  address: string;
+  details?: string;
+}
+
 export interface Summary {
   total: number;
   by_status: Partial<Record<Status, number>>;
@@ -93,6 +115,9 @@ export interface Snapshot {
   terraform_workspace?: string;
   available_workspaces?: WorkspaceInfo[];
   dependency_graph?: DependencyGraph;
+  drift_checked_at?: string;
+  drift_alerts?: DriftAlert[];
+  state_history?: StateVersionInfo[];
 }
 
 export interface StatusPayload {

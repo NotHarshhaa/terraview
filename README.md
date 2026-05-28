@@ -38,7 +38,7 @@ Terraview reads your Terraform project — `.tf` files, state backend, and optio
 | `terraform state list` is a flat text dump | Visual grid grouped by provider › service (or module) |
 | GUI tools are often SaaS or enterprise-only | Self-hosted binary; optional basic auth |
 | Hard to see pending vs applied at a glance | Eight lifecycle statuses with filters and summary chips |
-| Drift only visible after `terraform plan` | Plan JSON `resource_drift` surfaced as **drifted** status |
+| Drift only visible after `terraform plan` | Plan JSON `resource_drift` **and** optional background refresh-only drift scans |
 | Sharing infra status with non-engineers | Shareable filter URLs; export JSON/CSV |
 
 ---
@@ -51,7 +51,9 @@ Terraview reads your Terraform project — `.tf` files, state backend, and optio
 - **Multi-backend state** — local, S3, GCS, Azure Blob, Terraform Cloud / HCP Terraform
 - **Plan ingestion** — optional `plan_file` (`terraform show -json`) for pending changes and drift
 - **Plan & drift metadata** — `plan_action` and `drift_attributes` on each resource when a plan is loaded
+- **Drift auto-detection** — optional background job runs `terraform plan -refresh-only` on an interval, compares live provider attributes to state, and surfaces drift alerts without a static plan file (`drift_auto_check: true` or `--drift-auto-check`)
 - **State metadata** — `state_serial` and `state_modified_at` on snapshots (local backend mtime)
+- **Resource history** — in-memory timeline of created / updated / destroyed events inferred from state version diffs; exposed via `/api/history` and `/api/resource/history`
 - **Eight lifecycle statuses** — `created`, `inactive`, `pending_create`, `pending_update`, `pending_destroy`, `drifted`, `unmanaged`, `unknown`
 - **Auto-categorization** — AWS / GCP / Azure / Kubernetes → Compute, Networking, Databases, Storage, IAM, Serverless, …
 - **Module-aware** — shows module path per resource
@@ -68,10 +70,11 @@ Terraview reads your Terraform project — `.tf` files, state backend, and optio
 - **Shareable URLs** — filters sync to query params (`?status=drifted&provider=AWS`)
 - **Summary bar + status distribution** — clickable status chips and segment bar
 - **Attention banner** — highlights resources that need action
-- **Group by service or module** — toggle grid grouping; preference saved locally
+- **Group by service, module, or tag** — toggle grid grouping; group AWS/GCP resources by tag keys such as `Environment`, `Team`, or `Owner`; preference saved locally
 - **Sort & density** — sort by name, status, type, or address; compact row mode
 - **Collapsible groups** — expand/collapse all resource sections
-- **Resource detail sheet** — full metadata, tags, copy address, Terraform CLI hints, plan action & drift attributes, upstream dependencies
+- **Resource detail sheet** — full metadata, tags, copy address, Terraform CLI hints, plan action & drift attributes, upstream dependencies, **lifecycle history timeline**
+- **Drift alerts banner** — highlights resources detected by the background refresh-only scan
 - **Dependency graph view** — readable SVG layout of resource dependencies (toggle Grid / Graph in the toolbar)
 - **Workspace switcher** — pick a Terraform workspace from the header; uses `terraform.tfstate.d/<workspace>/` locally or `env:/<workspace>/` on remote backends
 - **Provider breakdown chart** — clickable bar chart by cloud provider
@@ -97,6 +100,9 @@ Terraview reads your Terraform project — `.tf` files, state backend, and optio
 | `GET /api/workspaces` | List Terraform workspaces + active workspace |
 | `POST /api/workspace` | Switch active workspace (`{"workspace":"dev"}`) |
 | `GET /api/graph` | Dependency graph for the active workspace |
+| `GET /api/history` | State version history for the active workspace |
+| `GET /api/resource/history` | Lifecycle timeline for one resource (`?address=aws_instance.web`) |
+| `GET /api/drift/alerts` | Drift alerts from the last refresh-only scan |
 | `GET /api/resources` | Filtered resource list (`?status=&provider=&module=&category=&tag=&q=&limit=&offset=`) |
 | `GET /api/resource` | Single resource by address (`?address=aws_instance.web`) |
 | `GET /api/facets` | Filter facet counts (optionally pre-filtered) |
@@ -235,6 +241,9 @@ Copy [`.terraview.yaml.example`](.terraview.yaml.example) to your project root. 
 ```yaml
 port: 7777
 poll_interval: 30s
+drift_auto_check: false         # run terraform plan -refresh-only in the background
+drift_check_interval: 5m      # how often to scan for drift (when enabled)
+terraform_bin: terraform        # path to terraform binary
 working_dir: .
 plan_file: ./plan.json          # optional: terraform show -json output
 
@@ -270,6 +279,9 @@ auth:
 | `TV_STATE_REGION` | — | AWS region (S3) |
 | `TV_STATE_FILE` | — | Explicit local state path |
 | `TV_PLAN_FILE` | — | Plan JSON path |
+| `TV_DRIFT_AUTO_CHECK` | `false` | Enable background refresh-only drift detection |
+| `TV_DRIFT_CHECK_INTERVAL` | `5m` | Drift scan interval when auto-check is enabled |
+| `TV_TERRAFORM_BIN` | `terraform` | Terraform binary for drift scans |
 | `TV_UI_TITLE` | `Terraview` | Dashboard title |
 | `TV_PASSWORD` | — | Basic auth password |
 | `TV_ACCESS_TOKEN` | — | Static API token (SSE-friendly) |

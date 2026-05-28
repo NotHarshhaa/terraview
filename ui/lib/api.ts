@@ -141,6 +141,23 @@ export async function fetchResource(address: string): Promise<{ resource: Resour
   return fetchJSON(`/api/resource?address=${encodeURIComponent(address)}`);
 }
 
+export async function fetchResourceHistory(address: string): Promise<{
+  address: string;
+  terraform_workspace?: string;
+  events: import("./types").ResourceHistoryEvent[];
+}> {
+  return fetchJSON(
+    `/api/resource/history?address=${encodeURIComponent(address)}`,
+  );
+}
+
+export async function fetchStateHistory(): Promise<{
+  terraform_workspace?: string;
+  versions: import("./types").StateVersionInfo[];
+}> {
+  return fetchJSON("/api/history");
+}
+
 export async function refreshSnapshot(): Promise<Snapshot> {
   return fetchJSON<Snapshot>("/api/refresh", { method: "POST" });
 }

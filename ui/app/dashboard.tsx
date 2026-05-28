@@ -13,6 +13,7 @@ import { AuthGate } from "@/components/auth-gate";
 import { CommandPalette } from "@/components/command-palette";
 import { CopyText } from "@/components/copy-button";
 import { ErrorsBanner } from "@/components/errors-banner";
+import { DriftAlertsBanner } from "@/components/drift-alerts-banner";
 import { DependencyGraphView } from "@/components/dependency-graph";
 import { ExportMenu } from "@/components/export-menu";
 import { buildFilterChips, FilterChips } from "@/components/filter-chips";
@@ -40,6 +41,7 @@ import { SummaryBar } from "@/components/summary-bar";
 import { useSnapshot } from "@/lib/api";
 import {
   buildFacets,
+  detectTagGroupKeys,
   emptyFilters,
   filterActiveCount,
   filterResources,
@@ -50,6 +52,7 @@ import {
   parseFilterSpec,
   resourceDomId,
   summariseResources,
+  tagGroupKeyFromParams,
   type FilterState,
   type GroupByMode,
 } from "@/lib/filters";
@@ -70,6 +73,7 @@ import {
 
 const EMPTY_RESOURCES: Resource[] = [];
 const GROUP_BY_KEY = "terraview_group_by";
+const TAG_GROUP_KEY = "terraview_tag_group_key";
 const DENSITY_KEY = "terraview_density";
 const SORT_KEY = "terraview_sort_key";
 const SORT_DIR_KEY = "terraview_sort_dir";
@@ -107,6 +111,9 @@ export function Dashboard() {
   });
   const [groupBy, setGroupBy] = React.useState<GroupByMode>(() =>
     groupByFromParams(searchParams),
+  );
+  const [tagGroupKey, setTagGroupKey] = React.useState(() =>
+    tagGroupKeyFromParams(searchParams),
   );
   const [sortKey, setSortKey] = React.useState<SortKey>("name");
   const [sortDir, setSortDir] = React.useState<SortDir>("asc");
@@ -158,6 +165,8 @@ export function Dashboard() {
       setFilters({ ...fromUrl, statuses: new Set() });
       setActiveStatuses(new Set(fromUrl.statuses));
       setGroupBy(groupByFromParams(searchParams));
+      const urlTagKey = tagGroupKeyFromParams(searchParams);
+      if (urlTagKey) setTagGroupKey(urlTagKey);
       urlHydrated.current = true;
       defaultFilterApplied.current = true;
       return;
@@ -185,20 +194,20 @@ export function Dashboard() {
   React.useEffect(() => {
     if (searchParams.get("group")) return;
     const stored = localStorage.getItem(GROUP_BY_KEY);
-    if (stored === "module" || stored === "category") {
+    if (stored === "module" || stored === "category" || stored === "tag") {
       setGroupBy(stored);
     }
   }, [searchParams]);
 
   React.useEffect(() => {
     if (!urlHydrated.current) return;
-    const params = filtersToSearchParams(filters, groupBy);
+    const params = filtersToSearchParams(filters, groupBy, tagGroupKey);
     if (activeStatuses.size) {
       params.set("status", [...activeStatuses].join(","));
     }
     const qs = params.toString();
     router.replace(qs ? `/?${qs}` : "/", { scroll: false });
-  }, [filters, groupBy, activeStatuses, router]);
+  }, [filters, groupBy, tagGroupKey, activeStatuses, router]);
 
   React.useEffect(() => {
     if (viewMode !== "graph" || graphRefreshed.current) return;
@@ -209,6 +218,26 @@ export function Dashboard() {
   const showCostColumn = snapshot?.ui?.show_cost_column ?? false;
   const pageTitle = snapshot?.ui?.title?.trim() || "Terraview";
   const resources = snapshot?.resources ?? EMPTY_RESOURCES;
+  const tagGroupKeys = React.useMemo(
+    () => detectTagGroupKeys(resources),
+    [resources],
+  );
+
+  React.useEffect(() => {
+    if (groupBy !== "tag") return;
+    const fromUrl = tagGroupKeyFromParams(searchParams);
+    if (fromUrl && tagGroupKeys.includes(fromUrl)) {
+      setTagGroupKey(fromUrl);
+      return;
+    }
+    if (tagGroupKey && tagGroupKeys.includes(tagGroupKey)) return;
+    const stored = localStorage.getItem(TAG_GROUP_KEY);
+    if (stored && tagGroupKeys.includes(stored)) {
+      setTagGroupKey(stored);
+      return;
+    }
+    if (tagGroupKeys[0]) setTagGroupKey(tagGroupKeys[0]);
+  }, [groupBy, tagGroupKeys, tagGroupKey, searchParams]);
 
   React.useEffect(() => {
     if (!hasLoaded) return;
@@ -280,6 +309,11 @@ export function Dashboard() {
     localStorage.setItem(GROUP_BY_KEY, mode);
   }, []);
 
+  const setTagGroupKeyMode = React.useCallback((key: string) => {
+    setTagGroupKey(key);
+    localStorage.setItem(TAG_GROUP_KEY, key);
+  }, []);
+
   const openDetails = React.useCallback((resource: Resource) => {
     setDetailResource(resource);
     setDetailOpen(true);
@@ -321,11 +355,11 @@ export function Dashboard() {
   const saveCurrentView = React.useCallback(() => {
     const name = window.prompt("Name this view");
     if (!name?.trim()) return;
-    const params = filtersToSearchParams(filters, groupBy);
+    const params = filtersToSearchParams(filters, groupBy, tagGroupKey);
     if (activeStatuses.size) params.set("status", [...activeStatuses].join(","));
     setSavedViews(saveView(name.trim(), params.toString()));
     toast(`Saved view “${name.trim()}”`);
-  }, [filters, groupBy, activeStatuses, toast]);
+  }, [filters, groupBy, tagGroupKey, activeStatuses, toast]);
 
   const focusSearch = React.useCallback(() => {
     document.getElementById("resource-search")?.focus();
@@ -542,6 +576,10 @@ export function Dashboard() {
                 summary={facetSummary}
                 onFilterStatus={setActiveStatuses}
               />
+              <DriftAlertsBanner
+                alerts={snapshot.drift_alerts}
+                checkedAt={snapshot.drift_checked_at}
+              />
               <StateInfoBar
                 backendType={snapshot.backend_type}
                 stateSerial={snapshot.state_serial}
@@ -590,6 +628,9 @@ export function Dashboard() {
                 }}
                 groupBy={groupBy}
                 onGroupByChange={setGroupByMode}
+                tagGroupKey={tagGroupKey}
+                tagGroupKeys={tagGroupKeys}
+                onTagGroupKeyChange={setTagGroupKeyMode}
                 sortKey={sortKey}
                 sortDir={sortDir}
                 onSortKeyChange={(k) => {
@@ -625,6 +666,7 @@ export function Dashboard() {
                   totalBeforeFilter={sidebarFiltered.length}
                   showCostColumn={showCostColumn}
                   groupBy={groupBy}
+                  tagGroupKey={tagGroupKey}
                   density={density}
                   onViewDetails={openDetails}
                   gridSignal={gridSignal}

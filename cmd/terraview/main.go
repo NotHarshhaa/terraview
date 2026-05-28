@@ -78,6 +78,7 @@ Common flags:
   --backend <kind>    local | s3 | gcs | azureblob | tfc (env TV_BACKEND)
   --state-file <p>    Path to a local terraform.tfstate (local backend)
   --plan-file <p>     Path to a 'terraform show -json' plan document
+  --drift-auto-check  Run refresh-only drift scans in the background (needs terraform in PATH)
   --ui <dir>          Serve a Next.js static export from <dir>/out
   --no-ui             Run headless (API only)
 
@@ -128,6 +129,7 @@ func runServe(args, positional []string) int {
 	backendKind := fs.String("backend", "", "override backend type")
 	stateFile := fs.String("state-file", "", "override local state file")
 	planFile := fs.String("plan-file", "", "override plan file")
+	driftAutoCheck := fs.Bool("drift-auto-check", false, "enable background refresh-only drift detection")
 	uiDir := fs.String("ui", "", "directory containing the Next.js static export (defaults to ./ui/out if present)")
 	noUI := fs.Bool("no-ui", false, "run headless (API only)")
 
@@ -167,6 +169,9 @@ func runServe(args, positional []string) int {
 	if *planFile != "" {
 		cfg.PlanFile = *planFile
 	}
+	if *driftAutoCheck {
+		cfg.DriftAutoCheck = true
+	}
 	if cfg.Backend.Type == "local" && cfg.Backend.WorkingDir == "" {
 		cfg.Backend.WorkingDir = cfg.WorkingDir
 	}
@@ -180,9 +185,12 @@ func runServe(args, positional []string) int {
 
 	eng := engine.New()
 	poller := api.NewPoller(eng, api.PollerConfig{
-		WorkingDir: cfg.WorkingDir,
-		PlanPath:   cfg.PlanFile,
-		Backend:    cfg.Backend,
+		WorkingDir:         cfg.WorkingDir,
+		PlanPath:           cfg.PlanFile,
+		Backend:            cfg.Backend,
+		DriftAutoCheck:     cfg.DriftAutoCheck,
+		DriftCheckInterval: cfg.DriftCheckInterval,
+		TerraformBin:       cfg.TerraformBin,
 	}, cfg.PollInterval, logger)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

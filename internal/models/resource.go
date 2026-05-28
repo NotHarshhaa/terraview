@@ -120,6 +120,34 @@ type DependencyGraph struct {
 	Edges []DependencyEdge `json:"edges"`
 }
 
+// DriftAlert describes provider drift detected by the background refresh-only
+// check (without a static plan file).
+type DriftAlert struct {
+	Address    string    `json:"address"`
+	Reason     string    `json:"reason"`
+	Attributes []string  `json:"attributes,omitempty"`
+	DetectedAt time.Time `json:"detected_at"`
+}
+
+// StateVersionInfo summarises one recorded state version in Terraview's
+// in-memory history ring buffer.
+type StateVersionInfo struct {
+	Serial        int64     `json:"serial"`
+	RecordedAt    time.Time `json:"recorded_at"`
+	ResourceCount int       `json:"resource_count"`
+	EventSummary  string    `json:"event_summary,omitempty"`
+}
+
+// ResourceHistoryEvent is a single lifecycle event inferred from state version
+// diffs (created, updated, or destroyed).
+type ResourceHistoryEvent struct {
+	At      time.Time `json:"at"`
+	Serial  int64     `json:"serial,omitempty"`
+	Action  string    `json:"action"`
+	Address string    `json:"address"`
+	Details string    `json:"details,omitempty"`
+}
+
 // UISettings carries dashboard options from .terraview.yaml into the API
 // response so the UI can honour them without a separate config roundtrip.
 type UISettings struct {
@@ -154,6 +182,15 @@ type Snapshot struct {
 
 	// DependencyGraph contains directed dependency edges between resources.
 	DependencyGraph DependencyGraph `json:"dependency_graph,omitempty"`
+
+	// DriftCheckedAt is when the last refresh-only drift scan completed.
+	DriftCheckedAt *time.Time `json:"drift_checked_at,omitempty"`
+
+	// DriftAlerts lists resources that drifted without a static plan file.
+	DriftAlerts []DriftAlert `json:"drift_alerts,omitempty"`
+
+	// StateHistory lists recent state versions Terraview observed (newest first).
+	StateHistory []StateVersionInfo `json:"state_history,omitempty"`
 }
 
 // Summary is a pre-aggregated count of statuses for the summary bar at the top
