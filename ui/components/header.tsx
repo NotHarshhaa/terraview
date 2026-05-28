@@ -260,8 +260,8 @@ export function Header({
 
 function TerraviewMark() {
   return (
-    <div className="flex size-9 shrink-0 items-center justify-center border bg-card shadow-sm ring-1 ring-foreground/5">
-      <svg viewBox="0 0 24 24" className="size-4 text-primary" aria-hidden>
+    <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+      <svg viewBox="0 0 24 24" className="size-4" aria-hidden>
         <path
           fill="currentColor"
           d="M12 2 2 6.5v6c0 5.25 4.25 9.5 10 9.5s10-4.25 10-9.5v-6L12 2Zm0 2.25 7.75 3.5v4.75c0 4.25-3.5 7.25-7.75 7.25s-7.75-3-7.75-7.25V7.75L12 4.25Zm0 3.25-5.25 3 5.25 3 5.25-3-5.25-3Zm-5.25 5.25v3.5l5.25 3 5.25-3v-3.5l-5.25 3-5.25-3Z"

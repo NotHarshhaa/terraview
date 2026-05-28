@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/tooltip";
 import { CloudResourceIcon } from "@/lib/cloud-icons";
 import { resourceDomId } from "@/lib/filters";
-import { type Resource, PLAN_ACTION_META } from "@/lib/types";
+import { type Resource, PLAN_ACTION_META, STATUS_META } from "@/lib/types";
 import type { Density } from "@/lib/views";
 import { cn } from "@/lib/utils";
 
@@ -57,6 +57,8 @@ export function ResourceRow({
 
   const rowPadding = density === "compact" ? "py-1.5" : "py-2.5";
 
+  const statusMeta = STATUS_META[resource.status];
+
   const mainContent = (
     <>
       <IconChevronRight
@@ -67,12 +69,20 @@ export function ResourceRow({
         )}
         aria-hidden
       />
-      <CloudResourceIcon
-        provider={resource.category.provider}
-        service={resource.category.service}
-        resourceType={resource.type}
-        className="size-4 shrink-0"
-      />
+      <div className="relative">
+        <CloudResourceIcon
+          provider={resource.category.provider}
+          service={resource.category.service}
+          resourceType={resource.type}
+          className="size-5 shrink-0"
+        />
+        <span
+          className={cn(
+            "absolute -right-0.5 -bottom-0.5 size-2 rounded-full ring-2 ring-background",
+            statusMeta.dot,
+          )}
+        />
+      </div>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
           <span className="truncate text-sm font-medium">{resource.name}</span>

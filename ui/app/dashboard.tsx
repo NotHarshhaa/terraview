@@ -24,6 +24,7 @@ import { ProviderBreakdown } from "@/components/provider-breakdown";
 import { ResourceDetailSheet } from "@/components/resource-detail-sheet";
 import { ResourceGrid } from "@/components/resource-grid";
 import { StateInfoBar } from "@/components/state-info-bar";
+import { StatsBento } from "@/components/stats-bento";
 import { useDashboardHotkeys } from "@/components/shortcuts-sheet";
 import { useToast } from "@/components/toast-provider";
 import { ViewToolbar } from "@/components/view-toolbar";
@@ -572,6 +573,7 @@ export function Dashboard() {
               {error ? (
                 <StaleDataBanner message={error} onRetry={refresh} />
               ) : null}
+
               <AttentionBanner
                 summary={facetSummary}
                 onFilterStatus={setActiveStatuses}
@@ -580,32 +582,37 @@ export function Dashboard() {
                 alerts={snapshot.drift_alerts}
                 checkedAt={snapshot.drift_checked_at}
               />
+              <ErrorsBanner errors={snapshot.errors} />
+
+              {/* Bento Stats Overview */}
+              <StatsBento
+                summary={facetSummary}
+                activeStatuses={activeStatuses}
+                onStatusToggle={(status) => {
+                  setActiveStatuses((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(status)) next.delete(status);
+                    else next.add(status);
+                    return next;
+                  });
+                }}
+                activeProviders={activeProviders}
+                onProviderToggle={(p) => toggleSet("providers", p)}
+                onClearProviders={clearProviderFilters}
+                stateSerial={snapshot.state_serial}
+                terraformWorkspace={snapshot.terraform_workspace}
+                backendType={snapshot.backend_type}
+              />
+
+              {/* State metadata strip */}
               <StateInfoBar
                 backendType={snapshot.backend_type}
                 stateSerial={snapshot.state_serial}
                 stateModifiedAt={snapshot.state_modified_at}
                 terraformWorkspace={snapshot.terraform_workspace}
               />
-              <div className="grid gap-4 lg:grid-cols-[1fr_16rem]">
-                <StatusChart
-                  summary={facetSummary}
-                  activeStatuses={activeStatuses}
-                  onStatusToggle={(status) => {
-                    setActiveStatuses((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(status)) next.delete(status);
-                      else next.add(status);
-                      return next;
-                    });
-                  }}
-                />
-                <ProviderBreakdown
-                  summary={facetSummary}
-                  activeProviders={activeProviders}
-                  onProviderToggle={(p) => toggleSet("providers", p)}
-                  onClearProviders={clearProviderFilters}
-                />
-              </div>
+
+              {/* Summary + Filter strip */}
               <SummaryBar
                 summary={facetSummary}
                 activeStatuses={activeStatuses}
@@ -619,7 +626,8 @@ export function Dashboard() {
                 }}
               />
               <FilterChips chips={filterChips} onClearAll={clearFilters} />
-              <ErrorsBanner errors={snapshot.errors} />
+
+              {/* View controls + Resource grid */}
               <ViewToolbar
                 viewMode={viewMode}
                 onViewModeChange={(mode) => {
@@ -672,6 +680,7 @@ export function Dashboard() {
                   gridSignal={gridSignal}
                 />
               )}
+
               <footer className="space-y-1 pt-2 text-center text-xs text-muted-foreground">
                 <CopyText
                   value={snapshot.working_dir}
@@ -729,9 +738,22 @@ export function Dashboard() {
 function LoadingState() {
   return (
     <div className="space-y-4">
-      <Skeleton className="h-8 w-2/3" />
-      <Skeleton className="h-32 w-full" />
-      <Skeleton className="h-32 w-full" />
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Skeleton className="h-32" />
+        <Skeleton className="h-32" />
+        <Skeleton className="h-32" />
+        <Skeleton className="h-32" />
+      </div>
+      <Skeleton className="h-14 w-full" />
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Skeleton className="h-16" />
+        <Skeleton className="h-16" />
+        <Skeleton className="h-16" />
+        <Skeleton className="h-16" />
+      </div>
+      <Skeleton className="h-10 w-full" />
+      <Skeleton className="h-48 w-full" />
+      <Skeleton className="h-48 w-full" />
     </div>
   );
 }
@@ -744,24 +766,32 @@ function ErrorState({
   onRetry: () => void;
 }) {
   return (
-    <div className="rounded-md border border-destructive/30 bg-destructive/5 p-6 text-sm">
-      <h2 className="mb-1 font-medium text-destructive">
-        Could not load snapshot
-      </h2>
-      <p className="mb-3 text-muted-foreground">{message}</p>
-      <p className="text-xs text-muted-foreground">
-        Start the API in another terminal:{" "}
-        <code className="rounded bg-muted px-1 py-0.5">
-          go run ./cmd/terraview serve ./testdata/sample-project --no-ui
-        </code>
-        <br />
-        Then run the UI:{" "}
-        <code className="rounded bg-muted px-1 py-0.5">cd ui && npm run dev</code>
-      </p>
+    <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+      <div className="flex size-16 items-center justify-center rounded-full border-2 border-destructive/30 bg-destructive/5">
+        <span className="text-2xl">!</span>
+      </div>
+      <div>
+        <h2 className="text-lg font-semibold text-destructive">
+          Could not load snapshot
+        </h2>
+        <p className="mt-1 max-w-md text-sm text-muted-foreground">{message}</p>
+      </div>
+      <div className="max-w-lg rounded-lg border bg-muted/50 p-4 text-left text-xs text-muted-foreground">
+        <p>
+          Start the API in another terminal:{" "}
+          <code className="rounded bg-background px-1 py-0.5 font-mono">
+            go run ./cmd/terraview serve ./testdata/sample-project --no-ui
+          </code>
+        </p>
+        <p className="mt-2">
+          Then run the UI:{" "}
+          <code className="rounded bg-background px-1 py-0.5 font-mono">cd ui && npm run dev</code>
+        </p>
+      </div>
       <button
         type="button"
         onClick={onRetry}
-        className="mt-3 rounded-md border bg-background px-3 py-1.5 text-xs hover:bg-muted"
+        className="rounded-lg border bg-background px-4 py-2 text-sm font-medium hover:bg-muted"
       >
         Try again
       </button>

@@ -1,6 +1,11 @@
 "use client";
 
-import { IconDatabase } from "@tabler/icons-react";
+import {
+  IconDatabase,
+  IconGitBranch,
+  IconHash,
+  IconClock,
+} from "@tabler/icons-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -54,50 +59,55 @@ export function StateInfoBar({
     return null;
   }
 
+  const items = [
+    terraformWorkspace && {
+      icon: <IconGitBranch className="size-3.5" />,
+      label: "Workspace",
+      value: terraformWorkspace,
+    },
+    backendType && {
+      icon: provider ? (
+        <CloudServiceIcon provider={provider} className="size-3.5" />
+      ) : (
+        <IconDatabase className="size-3.5" />
+      ),
+      label: "Backend",
+      value: backendType,
+    },
+    stateSerial !== undefined &&
+      stateSerial > 0 && {
+        icon: <IconHash className="size-3.5" />,
+        label: "Serial",
+        value: String(stateSerial),
+      },
+    modified && {
+      icon: <IconClock className="size-3.5" />,
+      label: "Modified",
+      value: modified,
+    },
+  ].filter(Boolean) as {
+    icon: React.ReactNode;
+    label: string;
+    value: string;
+  }[];
+
   return (
     <Card className={cn("gap-0 py-0 shadow-sm", className)}>
-      <CardContent className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
-        <span className="inline-flex items-center gap-2 font-heading text-xs font-semibold tracking-wider uppercase">
-          <span className="flex size-7 items-center justify-center border bg-background shadow-sm ring-1 ring-foreground/5">
-            <IconDatabase className="size-3.5 text-muted-foreground" aria-hidden />
-          </span>
-          State
-        </span>
-
-        <Separator orientation="vertical" className="hidden h-5 sm:block" />
-
-        <div className="flex flex-wrap items-center gap-2">
-          {terraformWorkspace ? (
-            <Badge variant="outline" className="gap-1.5 normal-case">
-              workspace
-              <span className="font-mono">{terraformWorkspace}</span>
-            </Badge>
-          ) : null}
-
-          {backendType ? (
-            <Badge variant="outline" className="gap-1.5 normal-case">
-              {provider ? (
-                <CloudServiceIcon provider={provider} className="size-3.5" />
-              ) : null}
-              backend
-              <span className="font-mono">{backendType}</span>
-            </Badge>
-          ) : null}
-
-          {stateSerial !== undefined && stateSerial > 0 ? (
-            <Badge variant="outline" className="gap-1.5 normal-case tabular-nums">
-              serial
-              <span className="font-mono">{stateSerial}</span>
-            </Badge>
-          ) : null}
-
-          {modified ? (
-            <Badge variant="secondary" className="gap-1.5 normal-case">
-              modified
-              <span className="font-mono text-[11px]">{modified}</span>
-            </Badge>
-          ) : null}
-        </div>
+      <CardContent className="grid grid-cols-2 gap-0 divide-x p-0 sm:grid-cols-4">
+        {items.map((item) => (
+          <div
+            key={item.label}
+            className="flex items-center gap-2.5 px-4 py-3"
+          >
+            <span className="text-muted-foreground">{item.icon}</span>
+            <div className="min-w-0">
+              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                {item.label}
+              </p>
+              <p className="truncate font-mono text-xs font-medium">{item.value}</p>
+            </div>
+          </div>
+        ))}
       </CardContent>
     </Card>
   );

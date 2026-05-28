@@ -92,13 +92,18 @@ export function ResourceGrid({
   if (resources.length === 0) {
     return (
       <Card className="border-dashed bg-card/40 py-0 shadow-none">
-        <CardContent className="flex flex-col items-center justify-center gap-2 py-14 text-center">
-          <p className="font-medium">No resources match the current filters.</p>
-          <p className="max-w-sm text-sm text-muted-foreground">
-            {totalBeforeFilter > 0
-              ? `Try clearing filters to see all ${totalBeforeFilter} resources.`
-              : "Run `terraform apply` and refresh once your state file is populated."}
-          </p>
+        <CardContent className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+          <div className="flex size-12 items-center justify-center rounded-full bg-muted">
+            <IconFolderOpen className="size-6 text-muted-foreground" />
+          </div>
+          <div>
+            <p className="font-medium">No resources match</p>
+            <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+              {totalBeforeFilter > 0
+                ? `Try clearing filters to see all ${totalBeforeFilter} resources.`
+                : "Run `terraform apply` and refresh once your state file is populated."}
+            </p>
+          </div>
         </CardContent>
       </Card>
     );

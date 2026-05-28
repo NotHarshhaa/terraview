@@ -1,6 +1,9 @@
 "use client";
 
-import { IconAlertTriangle } from "@tabler/icons-react";
+import {
+  IconAlertTriangle,
+  IconArrowRight,
+} from "@tabler/icons-react";
 
 import {
   Alert,
@@ -8,6 +11,7 @@ import {
   AlertDescription,
   AlertTitle,
 } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
@@ -49,8 +53,10 @@ export function AttentionBanner({ summary, onFilterStatus }: AttentionBannerProp
               key={status}
               variant="outline"
               size="xs"
+              className="gap-1.5"
               onClick={() => onFilterStatus(new Set([status]))}
             >
+              <span className={cn("size-1.5 rounded-full", STATUS_META[status].dot)} />
               {count} {STATUS_META[status].label.toLowerCase()}
             </Button>
           ))}
@@ -60,9 +66,11 @@ export function AttentionBanner({ summary, onFilterStatus }: AttentionBannerProp
         <Button
           variant="link"
           size="xs"
+          className="gap-1"
           onClick={() => onFilterStatus(new Set(ATTENTION_STATUSES))}
         >
           Show all
+          <IconArrowRight className="size-3" />
         </Button>
       </AlertAction>
     </Alert>
