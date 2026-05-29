@@ -47,8 +47,18 @@ type Poller struct {
 	workspaces []models.WorkspaceInfo
 	cache      map[string]*models.Snapshot
 	lastErr    error
+	changes    []ChangeEvent
+	metrics    pollerMetrics
 	subs       map[chan struct{}]struct{}
 	subsLock   sync.Mutex
+}
+
+type pollerMetrics struct {
+	RefreshCount      int64         `json:"refresh_count"`
+	RefreshErrors     int64         `json:"refresh_errors"`
+	LastRefreshMs     int64         `json:"last_refresh_ms"`
+	TotalResourcesSeen int          `json:"total_resources_seen"`
+	UptimeStart       time.Time     `json:"uptime_start"`
 }
 
 // NewPoller returns a poller that uses eng to produce snapshots based on
@@ -86,6 +96,7 @@ func NewPoller(eng *engine.Engine, cfg PollerConfig, period time.Duration, logge
 		history:        engine.NewHistoryStore(30),
 		workspace:      ws,
 		cache:          map[string]*models.Snapshot{},
+		metrics:        pollerMetrics{UptimeStart: time.Now()},
 		subs:           map[chan struct{}]struct{}{},
 	}
 }
@@ -139,6 +150,17 @@ func (p *Poller) CurrentWorkspace() string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.workspace
+}
+
+func (p *Poller) backendType() string {
+	return p.backendCfg.Type
+}
+
+// Metrics returns current poller metrics.
+func (p *Poller) Metrics() pollerMetrics {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.metrics
 }
 
 // Workspaces returns the last discovered workspace list with Current flags set.
@@ -243,14 +265,28 @@ func (p *Poller) refreshOnce(ctx context.Context, workspace string) (*models.Sna
 
 	p.mu.Lock()
 	if err == nil {
+		prev := p.cache[workspace]
 		snap.StateHistory = p.history.Record(workspace, snap.StateSerial, snap.Resources)
+		if prev != nil {
+			if events := DetectChanges(prev, snap); len(events) > 0 {
+				p.changes = append(p.changes, events...)
+				if len(p.changes) > 200 {
+					p.changes = p.changes[len(p.changes)-200:]
+				}
+			}
+		}
 		p.cache[workspace] = snap
 		if workspace == p.workspace {
 			p.lastErr = nil
 		}
+		p.metrics.RefreshCount++
+		p.metrics.LastRefreshMs = took.Milliseconds()
+		p.metrics.TotalResourcesSeen = snap.Summary.Total
 		p.logger.Printf("snapshot refreshed (%s): %d resources in %s", workspace, snap.Summary.Total, took.Round(time.Millisecond))
 	} else if workspace == p.workspace {
 		p.lastErr = err
+		p.metrics.RefreshCount++
+		p.metrics.RefreshErrors++
 		p.logger.Printf("snapshot refresh failed (%s) in %s: %v", workspace, took.Round(time.Millisecond), err)
 	}
 	p.mu.Unlock()
@@ -360,4 +396,87 @@ func (p *Poller) broadcast() {
 		default:
 		}
 	}
+}
+
+// ChangeEvent describes a resource status change between refreshes.
+type ChangeEvent struct {
+	Address   string        `json:"address"`
+	Name      string        `json:"name"`
+	Type      string        `json:"type"`
+	OldStatus models.Status `json:"old_status"`
+	NewStatus models.Status `json:"new_status"`
+	Workspace string        `json:"workspace"`
+	At        time.Time     `json:"at"`
+}
+
+// WebhookConfig configures outbound change notifications.
+type WebhookConfig struct {
+	URL     string
+	Enabled bool
+}
+
+// DetectChanges compares two snapshots and returns status change events.
+func DetectChanges(prev, curr *models.Snapshot) []ChangeEvent {
+	if prev == nil || curr == nil {
+		return nil
+	}
+	prevByAddr := map[string]models.Status{}
+	for _, r := range prev.Resources {
+		prevByAddr[r.Address] = r.Status
+	}
+	var events []ChangeEvent
+	for _, r := range curr.Resources {
+		old, existed := prevByAddr[r.Address]
+		if !existed {
+			events = append(events, ChangeEvent{
+				Address:   r.Address,
+				Name:      r.Name,
+				Type:      r.Type,
+				OldStatus: "",
+				NewStatus: r.Status,
+				Workspace: curr.TerraformWorkspace,
+				At:        curr.GeneratedAt,
+			})
+			continue
+		}
+		if old != r.Status {
+			events = append(events, ChangeEvent{
+				Address:   r.Address,
+				Name:      r.Name,
+				Type:      r.Type,
+				OldStatus: old,
+				NewStatus: r.Status,
+				Workspace: curr.TerraformWorkspace,
+				At:        curr.GeneratedAt,
+			})
+		}
+	}
+	// Detect destroyed resources.
+	currByAddr := map[string]struct{}{}
+	for _, r := range curr.Resources {
+		currByAddr[r.Address] = struct{}{}
+	}
+	for _, r := range prev.Resources {
+		if _, ok := currByAddr[r.Address]; !ok {
+			events = append(events, ChangeEvent{
+				Address:   r.Address,
+				Name:      r.Name,
+				Type:      r.Type,
+				OldStatus: r.Status,
+				NewStatus: "",
+				Workspace: curr.TerraformWorkspace,
+				At:        curr.GeneratedAt,
+			})
+		}
+	}
+	return events
+}
+
+// RecentChanges returns the last N change events observed by the poller.
+func (p *Poller) RecentChanges() []ChangeEvent {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	out := make([]ChangeEvent, len(p.changes))
+	copy(out, p.changes)
+	return out
 }

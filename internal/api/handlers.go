@@ -29,12 +29,45 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 
 // handleHealth is the liveness probe. It returns 200 even before the first
 // snapshot is ready so process supervisors don't kill the container during
-// startup.
+// startup. Includes dependency status for deeper health checks.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	snap, _ := s.poller.Snapshot()
+	deps := map[string]any{}
+
+	if snap != nil {
+		age := time.Since(snap.GeneratedAt).Round(time.Second)
+		deps["snapshot"] = map[string]any{
+			"status":       "ok",
+			"age_seconds":  int(age.Seconds()),
+			"resource_count": snap.Summary.Total,
+		}
+		if age > 5*time.Minute {
+			deps["snapshot"].(map[string]any)["status"] = "stale"
+		}
+	} else {
+		deps["snapshot"] = map[string]any{"status": "unavailable"}
+	}
+
+	deps["backend"] = map[string]any{
+		"type":   s.poller.backendType(),
+		"status": "ok",
+	}
+	if snap != nil && len(snap.Errors) > 0 {
+		for _, e := range snap.Errors {
+			if e.Source == "backend" {
+				deps["backend"].(map[string]any)["status"] = "degraded"
+				deps["backend"].(map[string]any)["error"] = e.Message
+				break
+			}
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":  "ok",
-		"version": s.version,
-		"time":    time.Now().UTC(),
+		"status":       "ok",
+		"version":      s.version,
+		"time":         time.Now().UTC(),
+		"workspace":    s.poller.CurrentWorkspace(),
+		"dependencies": deps,
 	})
 }
 
@@ -264,6 +297,36 @@ func (s *Server) handleDriftAlerts(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleChanges returns recent resource status change events.
+func (s *Server) handleChanges(w http.ResponseWriter, r *http.Request) {
+	changes := s.poller.RecentChanges()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"changes": changes,
+		"count":   len(changes),
+	})
+}
+
+// handleMetrics exposes operational metrics: refresh duration, resource counts,
+// error rates, and uptime.
+func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	m := s.poller.Metrics()
+	uptime := time.Since(m.UptimeStart).Round(time.Second)
+	errorRate := float64(0)
+	if m.RefreshCount > 0 {
+		errorRate = float64(m.RefreshErrors) / float64(m.RefreshCount)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"refresh_count":       m.RefreshCount,
+		"refresh_errors":      m.RefreshErrors,
+		"error_rate":          errorRate,
+		"last_refresh_ms":     m.LastRefreshMs,
+		"total_resources":     m.TotalResourcesSeen,
+		"uptime_seconds":      int(uptime.Seconds()),
+		"workspace":           s.poller.CurrentWorkspace(),
+		"poll_interval_sec":   int(s.poller.period.Seconds()),
+	})
+}
+
 // handleRefresh forces an out-of-band snapshot refresh. The caller blocks
 // until the refresh completes, so a manual "Refresh" button feels
 // synchronous from the user's point of view.
@@ -320,7 +383,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 // matchesSearch performs a case-insensitive substring match against name,
-// address, type and tag values.
+// address, type, tag values, attribute values, status reason, and dependencies.
 func matchesSearch(r models.Resource, needle string) bool {
 	if needle == "" {
 		return true
@@ -334,8 +397,29 @@ func matchesSearch(r models.Resource, needle string) bool {
 	if strings.Contains(strings.ToLower(r.Type), needle) {
 		return true
 	}
+	if strings.Contains(strings.ToLower(string(r.Status)), needle) {
+		return true
+	}
+	if strings.Contains(strings.ToLower(r.StatusReason), needle) {
+		return true
+	}
 	for _, v := range r.Tags {
 		if strings.Contains(strings.ToLower(v), needle) {
+			return true
+		}
+	}
+	for k, v := range r.Tags {
+		if strings.Contains(strings.ToLower(k), needle) || strings.Contains(strings.ToLower(v), needle) {
+			return true
+		}
+	}
+	for _, v := range r.Attributes {
+		if strings.Contains(strings.ToLower(v), needle) {
+			return true
+		}
+	}
+	for _, dep := range r.DependsOn {
+		if strings.Contains(strings.ToLower(dep), needle) {
 			return true
 		}
 	}

@@ -132,6 +132,7 @@ func runServe(args, positional []string) int {
 	driftAutoCheck := fs.Bool("drift-auto-check", false, "enable background refresh-only drift detection")
 	uiDir := fs.String("ui", "", "directory containing the Next.js static export (defaults to ./ui/out if present)")
 	noUI := fs.Bool("no-ui", false, "run headless (API only)")
+	jsonLog := fs.Bool("json", false, "emit structured JSON log lines")
 
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -176,7 +177,13 @@ func runServe(args, positional []string) int {
 		cfg.Backend.WorkingDir = cfg.WorkingDir
 	}
 
-	logger := log.New(os.Stdout, "[terraview] ", log.LstdFlags|log.Lmsgprefix)
+	var logger *log.Logger
+	if *jsonLog {
+		logger = log.New(os.Stdout, "", 0)
+		logger.SetOutput(&jsonLogWriter{out: os.Stdout})
+	} else {
+		logger = log.New(os.Stdout, "[terraview] ", log.LstdFlags|log.Lmsgprefix)
+	}
 
 	if cfg.Backend.Type == "" {
 		cfg.Backend.Type = "local"
@@ -431,4 +438,16 @@ func uiFileServer(root string) http.Handler {
 		}
 		fs.ServeHTTP(w, r)
 	})
+}
+
+// jsonLogWriter wraps log output as JSON lines with timestamp and message.
+type jsonLogWriter struct {
+	out *os.File
+}
+
+func (w *jsonLogWriter) Write(p []byte) (int, error) {
+	msg := strings.TrimSpace(string(p))
+	line := fmt.Sprintf(`{"ts":"%s","msg":%q}`, time.Now().UTC().Format(time.RFC3339), msg)
+	_, err := fmt.Fprintln(w.out, line)
+	return len(p), err
 }

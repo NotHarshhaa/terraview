@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/NotHarshhaa/terraview/internal/models"
@@ -103,6 +104,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/drift/alerts", s.handleDriftAlerts)
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("/api/refresh", s.handleRefresh)
+	mux.HandleFunc("/api/changes", s.handleChanges)
+	mux.HandleFunc("/api/metrics", s.handleMetrics)
 	mux.HandleFunc("/api/login", s.handleLogin)
 	mux.HandleFunc("/api/events", s.handleEvents)
 
@@ -112,11 +115,12 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("/", s.handleRoot)
 	}
 
-	// Order: log → CORS → auth → mux.
+	// Order: log → CORS → rate-limit → auth → mux.
 	var h http.Handler = mux
 	if s.auth.Enabled {
 		h = s.authMiddleware(h)
 	}
+	h = s.rateLimitMiddleware(h)
 	h = s.cors(h)
 	h = s.logRequests(h)
 	return h
@@ -283,4 +287,69 @@ func normaliseAddr(addr string) string {
 		return addr
 	}
 	return addr
+}
+
+// rateLimitMiddleware applies a simple per-IP token bucket rate limiter.
+// It allows 60 requests per minute per IP with a burst of 20.
+func (s *Server) rateLimitMiddleware(next http.Handler) http.Handler {
+	type bucket struct {
+		tokens    float64
+		lastCheck time.Time
+	}
+	var mu sync.Mutex
+	clients := map[string]*bucket{}
+	const rate = 60.0 / 60.0 // 60 req/min = 1 req/sec refill
+	const burst = 20.0
+
+	// Periodic cleanup of stale entries.
+	go func() {
+		for {
+			time.Sleep(5 * time.Minute)
+			mu.Lock()
+			now := time.Now()
+			for ip, b := range clients {
+				if now.Sub(b.lastCheck) > 10*time.Minute {
+					delete(clients, ip)
+				}
+			}
+			mu.Unlock()
+		}
+	}()
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip rate limiting for SSE (long-lived) and health checks.
+		if strings.HasPrefix(r.URL.Path, "/api/events") || r.URL.Path == "/api/health" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		ip := r.RemoteAddr
+		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+			ip = strings.TrimSpace(strings.Split(fwd, ",")[0])
+		}
+
+		mu.Lock()
+		b, ok := clients[ip]
+		if !ok {
+			b = &bucket{tokens: burst, lastCheck: time.Now()}
+			clients[ip] = b
+		}
+		now := time.Now()
+		elapsed := now.Sub(b.lastCheck).Seconds()
+		b.tokens += elapsed * rate
+		if b.tokens > burst {
+			b.tokens = burst
+		}
+		b.lastCheck = now
+		if b.tokens < 1 {
+			mu.Unlock()
+			w.Header().Set("Retry-After", "1")
+			writeError(w, http.StatusTooManyRequests, "rate limit exceeded")
+			return
+		}
+		b.tokens--
+		mu.Unlock()
+
+		next.ServeHTTP(w, r)
+	})
 }
