@@ -121,15 +121,26 @@ func (h *HistoryStore) ResourceTimeline(workspace, address string) []models.Reso
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	all := h.events[normaliseWorkspace(workspace)]
-	out := make([]models.ResourceHistoryEvent, 0, 4)
-	for _, ev := range all {
+	type indexed struct {
+		event models.ResourceHistoryEvent
+		pos   int
+	}
+	var items []indexed
+	for i, ev := range all {
 		if ev.Address == address {
-			out = append(out, ev)
+			items = append(items, indexed{event: ev, pos: i})
 		}
 	}
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].At.After(out[j].At)
+	sort.Slice(items, func(i, j int) bool {
+		if !items[i].event.At.Equal(items[j].event.At) {
+			return items[i].event.At.After(items[j].event.At)
+		}
+		return items[i].pos > items[j].pos
 	})
+	out := make([]models.ResourceHistoryEvent, len(items))
+	for i, item := range items {
+		out[i] = item.event
+	}
 	return out
 }
 
