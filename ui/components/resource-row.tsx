@@ -6,7 +6,7 @@
 
 import * as React from "react";
 
-import { IconChevronRight, IconInfoCircle } from "@tabler/icons-react";
+import { IconChevronRight, IconInfoCircle, IconPin, IconPinFilled } from "@tabler/icons-react";
 
 import { CopyButton, CopyText } from "@/components/copy-button";
 import { StatusBadge } from "@/components/status-badge";
@@ -30,6 +30,11 @@ interface ResourceRowProps {
   density?: Density;
   onViewDetails?: (resource: Resource) => void;
   focused?: boolean;
+  bulkMode?: boolean;
+  selected?: boolean;
+  onToggleSelect?: (address: string) => void;
+  pinned?: boolean;
+  onTogglePin?: (address: string) => void;
 }
 
 export function ResourceRow({
@@ -38,6 +43,11 @@ export function ResourceRow({
   density = "comfortable",
   onViewDetails,
   focused = false,
+  bulkMode,
+  selected,
+  onToggleSelect,
+  pinned,
+  onTogglePin,
 }: ResourceRowProps) {
   const [open, setOpen] = React.useState(false);
 
@@ -127,6 +137,15 @@ export function ResourceRow({
           !open && "hover:bg-muted/30",
         )}
       >
+        {bulkMode ? (
+          <input
+            type="checkbox"
+            checked={!!selected}
+            onChange={() => onToggleSelect?.(resource.address)}
+            className="size-4 shrink-0 rounded border-border accent-primary"
+            aria-label={`Select ${resource.name}`}
+          />
+        ) : null}
         {hasDetails ? (
           <button
             type="button"
@@ -142,6 +161,24 @@ export function ResourceRow({
         )}
 
         <div className="flex shrink-0 items-center gap-1">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className={cn("opacity-0 group-hover:opacity-100", pinned && "opacity-100")}
+                onClick={() => onTogglePin?.(resource.address)}
+                aria-label={pinned ? "Unpin" : "Pin to top"}
+              >
+                {pinned ? (
+                  <IconPinFilled className="size-3.5 text-primary" />
+                ) : (
+                  <IconPin className="size-3.5" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{pinned ? "Unpin" : "Pin to top"}</TooltipContent>
+          </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
               <CopyButton

@@ -135,16 +135,37 @@ export function ResourceDetailSheet({
 
             {resource.drift_attributes && resource.drift_attributes.length > 0 ? (
               <DetailSection icon={IconInfoCircle} title="Drifted attributes">
-                <div className="flex flex-wrap gap-1.5">
-                  {resource.drift_attributes.map((attr) => (
-                    <Badge
-                      key={attr}
-                      variant="outline"
-                      className="border border-border bg-muted/40 px-2 py-1 font-mono normal-case tracking-normal"
-                    >
-                      {attr}
-                    </Badge>
-                  ))}
+                <div className="space-y-2">
+                  <div className="flex flex-wrap gap-1.5">
+                    {resource.drift_attributes.map((attr) => (
+                      <Badge
+                        key={attr}
+                        variant="outline"
+                        className="border border-border bg-muted/40 px-2 py-1 font-mono normal-case tracking-normal"
+                      >
+                        {attr}
+                      </Badge>
+                    ))}
+                  </div>
+                  <div className="divide-y border bg-background/60 text-xs">
+                    {resource.drift_attributes.filter(a => !a.startsWith("+")).map((attr) => (
+                      <div key={attr} className="grid grid-cols-[6rem_1fr] gap-2 px-3 py-2">
+                        <span className="font-mono text-muted-foreground">{attr}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="rounded bg-rose-500/10 px-1.5 py-0.5 font-mono text-rose-600 line-through dark:text-rose-400">
+                            {resource.attributes?.[attr] ?? "—"}
+                          </span>
+                          <span className="text-muted-foreground">→</span>
+                          <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 font-mono text-emerald-600 dark:text-emerald-400">
+                            (provider value)
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    State values shown. Run <code className="font-mono">terraform plan</code> to see actual provider values.
+                  </p>
                 </div>
               </DetailSection>
             ) : null}

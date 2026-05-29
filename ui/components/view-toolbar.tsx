@@ -5,6 +5,7 @@ import {
   IconChevronsUp,
   IconLayoutGrid,
   IconList,
+  IconListCheck,
   IconShare3,
 } from "@tabler/icons-react";
 
@@ -42,6 +43,8 @@ interface ViewToolbarProps {
   onExpandAll: () => void;
   onCollapseAll: () => void;
   resourceCount: number;
+  bulkMode?: boolean;
+  onBulkModeChange?: (enabled: boolean) => void;
 }
 
 export function ViewToolbar({
@@ -61,6 +64,8 @@ export function ViewToolbar({
   onExpandAll,
   onCollapseAll,
   resourceCount,
+  bulkMode,
+  onBulkModeChange,
 }: ViewToolbarProps) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -161,6 +166,16 @@ export function ViewToolbar({
         </Button>
         <Button variant="outline" size="icon-sm" onClick={onCollapseAll} title="Collapse all" disabled={viewMode === "graph"}>
           <IconChevronsUp className="size-4" />
+        </Button>
+
+        <Button
+          variant={bulkMode ? "secondary" : "outline"}
+          size="icon-sm"
+          onClick={() => onBulkModeChange?.(!bulkMode)}
+          title={bulkMode ? "Exit select mode" : "Select resources"}
+          disabled={viewMode === "graph"}
+        >
+          <IconListCheck className="size-4" />
         </Button>
       </div>
     </div>

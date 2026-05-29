@@ -28,6 +28,11 @@ interface ResourceGridProps {
   onViewDetails?: (resource: Resource) => void;
   gridSignal?: { action: "expand" | "collapse"; seq: number } | null;
   focusedAddress?: string;
+  bulkMode?: boolean;
+  selectedAddresses?: Set<string>;
+  onToggleSelect?: (address: string) => void;
+  pinnedAddresses?: Set<string>;
+  onTogglePin?: (address: string) => void;
 }
 
 interface CategoryGroup {
@@ -64,6 +69,11 @@ export function ResourceGrid({
   onViewDetails,
   gridSignal,
   focusedAddress,
+  bulkMode,
+  selectedAddresses,
+  onToggleSelect,
+  pinnedAddresses,
+  onTogglePin,
 }: ResourceGridProps) {
   const groups = React.useMemo(() => {
     if (groupBy === "module") return groupByModule(resources);
@@ -182,6 +192,11 @@ export function ResourceGrid({
                     density={density}
                     onViewDetails={onViewDetails}
                     focused={r.address === focusedAddress}
+                    bulkMode={bulkMode}
+                    selected={selectedAddresses?.has(r.address)}
+                    onToggleSelect={onToggleSelect}
+                    pinned={pinnedAddresses?.has(r.address)}
+                    onTogglePin={onTogglePin}
                   />
                 ))}
               </CardContent>

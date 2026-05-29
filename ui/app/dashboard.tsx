@@ -64,6 +64,7 @@ import {
   type SavedView,
 } from "@/lib/saved-views";
 import type { Resource, Status } from "@/lib/types";
+import { downloadJSON } from "@/lib/export";
 import {
   QUICK_PRESETS,
   sortResources,
@@ -79,6 +80,7 @@ const DENSITY_KEY = "terraview_density";
 const SORT_KEY = "terraview_sort_key";
 const SORT_DIR_KEY = "terraview_sort_dir";
 const VIEW_MODE_KEY = "terraview_view_mode";
+const PINNED_KEY = "terraview_pinned";
 
 export function Dashboard() {
   const { toast } = useToast();
@@ -130,6 +132,15 @@ export function Dashboard() {
   } | null>(null);
   const [commandOpen, setCommandOpen] = React.useState(false);
   const [shortcutsOpen, setShortcutsOpen] = React.useState(false);
+  const [bulkMode, setBulkMode] = React.useState(false);
+  const [selectedAddresses, setSelectedAddresses] = React.useState<Set<string>>(new Set());
+  const [pinnedAddresses, setPinnedAddresses] = React.useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      const raw = localStorage.getItem(PINNED_KEY);
+      return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+    } catch { return new Set(); }
+  });
   const defaultFilterApplied = React.useRef(false);
   const urlHydrated = React.useRef(false);
 
@@ -274,8 +285,12 @@ export function Dashboard() {
       modules: new Set(),
       tags: new Set(),
     });
-    return sortResources(base, sortKey, sortDir);
-  }, [sidebarFiltered, activeStatuses, sortKey, sortDir]);
+    const sorted = sortResources(base, sortKey, sortDir);
+    if (pinnedAddresses.size === 0) return sorted;
+    const pinned = sorted.filter((r) => pinnedAddresses.has(r.address));
+    const rest = sorted.filter((r) => !pinnedAddresses.has(r.address));
+    return [...pinned, ...rest];
+  }, [sidebarFiltered, activeStatuses, sortKey, sortDir, pinnedAddresses]);
 
   const facetSummary = React.useMemo(
     () => summariseResources(sidebarFiltered),
@@ -300,6 +315,53 @@ export function Dashboard() {
     setActiveStatuses(new Set());
     setFilters(emptyFilters());
   }, []);
+
+  const toggleBulkSelect = React.useCallback((address: string) => {
+    setSelectedAddresses((prev) => {
+      const next = new Set(prev);
+      if (next.has(address)) next.delete(address);
+      else next.add(address);
+      return next;
+    });
+  }, []);
+
+  const selectAll = React.useCallback(() => {
+    setSelectedAddresses(new Set(filtered.map((r) => r.address)));
+  }, [filtered]);
+
+  const clearSelection = React.useCallback(() => {
+    setSelectedAddresses(new Set());
+    setBulkMode(false);
+  }, []);
+
+  const togglePin = React.useCallback((address: string) => {
+    setPinnedAddresses((prev) => {
+      const next = new Set(prev);
+      if (next.has(address)) next.delete(address);
+      else next.add(address);
+      localStorage.setItem(PINNED_KEY, JSON.stringify([...next]));
+      return next;
+    });
+  }, []);
+
+  const copySelectedAddresses = React.useCallback(async () => {
+    const addrs = filtered
+      .filter((r) => selectedAddresses.has(r.address))
+      .map((r) => r.address)
+      .join("\n");
+    await navigator.clipboard.writeText(addrs);
+    toast(`Copied ${selectedAddresses.size} addresses`);
+  }, [filtered, selectedAddresses, toast]);
+
+  const exportSelected = React.useCallback(() => {
+    const selected = filtered.filter((r) => selectedAddresses.has(r.address));
+    downloadJSON(selected, {
+      generatedAt: snapshot?.generated_at,
+      workingDir: snapshot?.working_dir,
+      filterSummary: `${selected.length} selected resources`,
+    });
+    toast(`Exported ${selected.length} resources`);
+  }, [filtered, selectedAddresses, snapshot, toast]);
 
   const setSearch = React.useCallback((value: string) => {
     setFilters((prev) => ({ ...prev, search: value }));
@@ -696,6 +758,11 @@ export function Dashboard() {
                   setGridSignal({ action: "collapse", seq: Date.now() })
                 }
                 resourceCount={filtered.length}
+                bulkMode={bulkMode}
+                onBulkModeChange={(v) => {
+                  setBulkMode(v);
+                  if (!v) setSelectedAddresses(new Set());
+                }}
               />
               {viewMode === "graph" ? (
                 <DependencyGraphView
@@ -714,8 +781,35 @@ export function Dashboard() {
                   onViewDetails={openDetails}
                   gridSignal={gridSignal}
                   focusedAddress={focusedIdx >= 0 ? filtered[focusedIdx]?.address : undefined}
+                  bulkMode={bulkMode}
+                  selectedAddresses={selectedAddresses}
+                  onToggleSelect={toggleBulkSelect}
+                  pinnedAddresses={pinnedAddresses}
+                  onTogglePin={togglePin}
                 />
               )}
+
+              {bulkMode && selectedAddresses.size > 0 ? (
+                <div className="sticky bottom-4 z-10 flex items-center justify-between gap-3 rounded-lg border bg-background/95 px-4 py-3 shadow-lg backdrop-blur">
+                  <span className="text-sm font-medium">
+                    {selectedAddresses.size} selected
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={selectAll}>
+                      Select all ({filtered.length})
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={copySelectedAddresses}>
+                      Copy addresses
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={exportSelected}>
+                      Export JSON
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={clearSelection}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
 
               <footer className="space-y-1 pt-2 text-center text-xs text-muted-foreground">
                 <CopyText
