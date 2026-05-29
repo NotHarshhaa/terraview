@@ -16,6 +16,8 @@ import {
 const SHORTCUTS = [
   { keys: ["/", "Ctrl+K"], action: "Focus search / open command palette" },
   { keys: ["r"], action: "Refresh snapshot" },
+  { keys: ["j", "k"], action: "Navigate resources down / up" },
+  { keys: ["Enter"], action: "Open selected resource details" },
   { keys: ["Esc"], action: "Clear all filters" },
   { keys: ["d"], action: "Toggle light / dark theme" },
   { keys: ["?"], action: "Show keyboard shortcuts" },
@@ -72,6 +74,9 @@ interface DashboardHotkeysOptions {
   onRefresh: () => void;
   onClearFilters: () => void;
   onShowShortcuts: () => void;
+  onNavigateDown?: () => void;
+  onNavigateUp?: () => void;
+  onNavigateOpen?: () => void;
 }
 
 export function useDashboardHotkeys({
@@ -80,6 +85,9 @@ export function useDashboardHotkeys({
   onRefresh,
   onClearFilters,
   onShowShortcuts,
+  onNavigateDown,
+  onNavigateUp,
+  onNavigateOpen,
 }: DashboardHotkeysOptions) {
   React.useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -105,9 +113,20 @@ export function useDashboardHotkeys({
       if (e.key === "Escape") {
         onClearFilters();
       }
+      if (e.key === "j" && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        onNavigateDown?.();
+      }
+      if (e.key === "k" && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        onNavigateUp?.();
+      }
+      if (e.key === "Enter" && !e.metaKey && !e.ctrlKey) {
+        onNavigateOpen?.();
+      }
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onFocusSearch, onOpenCommand, onRefresh, onClearFilters, onShowShortcuts]);
+  }, [onFocusSearch, onOpenCommand, onRefresh, onClearFilters, onShowShortcuts, onNavigateDown, onNavigateUp, onNavigateOpen]);
 }

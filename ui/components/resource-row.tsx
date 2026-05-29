@@ -8,7 +8,7 @@ import * as React from "react";
 
 import { IconChevronRight, IconInfoCircle } from "@tabler/icons-react";
 
-import { CopyText } from "@/components/copy-button";
+import { CopyButton, CopyText } from "@/components/copy-button";
 import { StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,7 @@ interface ResourceRowProps {
   showCostColumn?: boolean;
   density?: Density;
   onViewDetails?: (resource: Resource) => void;
+  focused?: boolean;
 }
 
 export function ResourceRow({
@@ -36,6 +37,7 @@ export function ResourceRow({
   showCostColumn = false,
   density = "comfortable",
   onViewDetails,
+  focused = false,
 }: ResourceRowProps) {
   const [open, setOpen] = React.useState(false);
 
@@ -115,6 +117,7 @@ export function ResourceRow({
       className={cn(
         "group scroll-mt-24 bg-background transition-colors",
         open && "bg-muted/20",
+        focused && "ring-2 ring-inset ring-primary/40",
       )}
     >
       <div
@@ -139,6 +142,16 @@ export function ResourceRow({
         )}
 
         <div className="flex shrink-0 items-center gap-1">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <CopyButton
+                value={resource.address}
+                label="Copy address"
+                className="opacity-0 group-hover:opacity-100"
+              />
+            </TooltipTrigger>
+            <TooltipContent>Copy address</TooltipContent>
+          </Tooltip>
           {onViewDetails ? (
             <Tooltip>
               <TooltipTrigger asChild>

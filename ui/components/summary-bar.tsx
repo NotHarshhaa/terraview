@@ -1,21 +1,27 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { STATUS_META, STATUS_ORDER, type Status, type Summary } from "@/lib/types";
+import type { Resource } from "@/lib/types";
 
 interface SummaryBarProps {
   summary: Summary;
   activeStatuses: Set<Status>;
   onStatusToggle: (status: Status) => void;
+  resources?: Resource[];
 }
 
 export function SummaryBar({
   summary,
   activeStatuses,
   onStatusToggle,
+  resources,
 }: SummaryBarProps) {
   const items = STATUS_ORDER.map((status) => ({
     status,
@@ -53,29 +59,46 @@ export function SummaryBar({
               const active = activeStatuses.has(status);
               const pct =
                 summary.total > 0 ? Math.round((count / summary.total) * 100) : 0;
+              const names = resources
+                ?.filter((r) => r.status === status)
+                .slice(0, 5)
+                .map((r) => r.name) ?? [];
+              const hasMore = count > 5;
               return (
-                <button
-                  key={status}
-                  type="button"
-                  onClick={() => onStatusToggle(status)}
-                  aria-pressed={active}
-                  className={cn(
-                    "group/pill flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs transition-all",
-                    active
-                      ? "border-primary bg-primary/5 ring-1 ring-primary/20"
-                      : "border-transparent hover:border-border hover:bg-muted/50",
-                    activeStatuses.size > 0 && !active && "opacity-40",
-                  )}
-                >
-                  <span
-                    className={cn("size-2 rounded-full", meta.dot)}
-                  />
-                  <span className="font-medium tabular-nums">{count}</span>
-                  <span className="text-muted-foreground">{meta.label}</span>
-                  <span className="hidden text-muted-foreground/60 tabular-nums group-hover/pill:inline">
-                    {pct}%
-                  </span>
-                </button>
+                <Tooltip key={status}>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => onStatusToggle(status)}
+                      aria-pressed={active}
+                      className={cn(
+                        "group/pill flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs transition-all",
+                        active
+                          ? "border-primary bg-primary/5 ring-1 ring-primary/20"
+                          : "border-transparent hover:border-border hover:bg-muted/50",
+                        activeStatuses.size > 0 && !active && "opacity-40",
+                      )}
+                    >
+                      <span
+                        className={cn("size-2 rounded-full", meta.dot)}
+                      />
+                      <span className="font-medium tabular-nums">{count}</span>
+                      <span className="text-muted-foreground">{meta.label}</span>
+                      <span className="hidden text-muted-foreground/60 tabular-nums group-hover/pill:inline">
+                        {pct}%
+                      </span>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-64">
+                    <p className="font-medium">{meta.label} ({count})</p>
+                    {names.length > 0 && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {names.join(", ")}{hasMore ? `, +${count - 5} more` : ""}
+                      </p>
+                    )}
+                    <p className="mt-1 text-xs text-muted-foreground/70">{meta.description}</p>
+                  </TooltipContent>
+                </Tooltip>
               );
             })}
           </div>

@@ -27,6 +27,7 @@ interface ResourceGridProps {
   density?: Density;
   onViewDetails?: (resource: Resource) => void;
   gridSignal?: { action: "expand" | "collapse"; seq: number } | null;
+  focusedAddress?: string;
 }
 
 interface CategoryGroup {
@@ -62,6 +63,7 @@ export function ResourceGrid({
   density = "comfortable",
   onViewDetails,
   gridSignal,
+  focusedAddress,
 }: ResourceGridProps) {
   const groups = React.useMemo(() => {
     if (groupBy === "module") return groupByModule(resources);
@@ -179,6 +181,7 @@ export function ResourceGrid({
                     showCostColumn={showCostColumn}
                     density={density}
                     onViewDetails={onViewDetails}
+                    focused={r.address === focusedAddress}
                   />
                 ))}
               </CardContent>

@@ -366,12 +366,45 @@ export function Dashboard() {
     document.getElementById("resource-search")?.focus();
   }, []);
 
+  const [focusedIdx, setFocusedIdx] = React.useState(-1);
+
+  React.useEffect(() => {
+    setFocusedIdx(-1);
+  }, [filtered]);
+
+  const navigateDown = React.useCallback(() => {
+    setFocusedIdx((prev) => {
+      const next = Math.min(prev + 1, filtered.length - 1);
+      const el = document.getElementById(resourceDomId(filtered[next]?.address ?? ""));
+      el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      return next;
+    });
+  }, [filtered]);
+
+  const navigateUp = React.useCallback(() => {
+    setFocusedIdx((prev) => {
+      const next = Math.max(prev - 1, 0);
+      const el = document.getElementById(resourceDomId(filtered[next]?.address ?? ""));
+      el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      return next;
+    });
+  }, [filtered]);
+
+  const navigateOpen = React.useCallback(() => {
+    if (focusedIdx >= 0 && focusedIdx < filtered.length) {
+      openDetails(filtered[focusedIdx]);
+    }
+  }, [focusedIdx, filtered, openDetails]);
+
   useDashboardHotkeys({
     onFocusSearch: focusSearch,
     onOpenCommand: () => setCommandOpen(true),
     onRefresh: () => void refresh(),
     onClearFilters: clearFilters,
     onShowShortcuts: () => setShortcutsOpen(true),
+    onNavigateDown: navigateDown,
+    onNavigateUp: navigateUp,
+    onNavigateOpen: navigateOpen,
   });
 
   const handleWorkspaceSwitch = React.useCallback(
@@ -497,6 +530,7 @@ export function Dashboard() {
             switching={switchingWorkspace}
             onSwitch={(ws) => void handleWorkspaceSwitch(ws)}
             className="hidden w-[9rem] sm:flex"
+            resources={resources}
           />
         }
         exportMenu={
@@ -616,6 +650,7 @@ export function Dashboard() {
               <SummaryBar
                 summary={facetSummary}
                 activeStatuses={activeStatuses}
+                resources={sidebarFiltered}
                 onStatusToggle={(status) => {
                   setActiveStatuses((prev) => {
                     const next = new Set(prev);
@@ -678,6 +713,7 @@ export function Dashboard() {
                   density={density}
                   onViewDetails={openDetails}
                   gridSignal={gridSignal}
+                  focusedAddress={focusedIdx >= 0 ? filtered[focusedIdx]?.address : undefined}
                 />
               )}
 

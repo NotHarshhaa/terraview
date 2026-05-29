@@ -248,6 +248,7 @@ export function Header({
           connectionState={connectionState}
           headline={headline}
           relative={relative}
+          generatedAt={generatedAt}
           version={version}
           resourceCount={resourceCount}
           totalResources={totalResources}
@@ -277,6 +278,7 @@ function HeaderMeta({
   connectionState,
   headline,
   relative,
+  generatedAt,
   version,
   resourceCount,
   totalResources,
@@ -288,6 +290,7 @@ function HeaderMeta({
   connectionState: ConnectionState;
   headline?: string | null;
   relative: string | null;
+  generatedAt?: string;
   version?: string | null;
   resourceCount?: number;
   totalResources?: number;
@@ -299,7 +302,7 @@ function HeaderMeta({
 
   return (
     <div className={cn("items-center gap-2.5 lg:gap-3", className)}>
-      <ConnectionBadge state={connectionState} />
+      <ConnectionBadge state={connectionState} lastRefreshedAt={generatedAt} />
 
       {backendType ? (
         <Badge variant="secondary" className="gap-1.5 normal-case">
