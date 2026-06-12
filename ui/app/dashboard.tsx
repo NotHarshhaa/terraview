@@ -7,7 +7,7 @@
 import * as React from "react";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { IconFilter } from "@tabler/icons-react";
+import { IconAlertTriangle, IconFilter } from "@tabler/icons-react";
 
 import { AuthGate } from "@/components/auth-gate";
 import { CommandPalette } from "@/components/command-palette";
@@ -29,6 +29,12 @@ import { useDashboardHotkeys } from "@/components/shortcuts-sheet";
 import { useToast } from "@/components/toast-provider";
 import { ViewToolbar } from "@/components/view-toolbar";
 import { WorkspaceSwitcher } from "@/components/workspace-switcher";
+import {
+  Alert,
+  AlertAction,
+  AlertDescription,
+  AlertTitle,
+} from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -896,36 +902,28 @@ function ErrorState({
   onRetry: () => void;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
-      <div className="flex size-16 items-center justify-center rounded-full border-2 border-destructive/30 bg-destructive/5">
-        <span className="text-2xl">!</span>
-      </div>
-      <div>
-        <h2 className="text-lg font-semibold text-destructive">
-          Could not load snapshot
-        </h2>
-        <p className="mt-1 max-w-md text-sm text-muted-foreground">{message}</p>
-      </div>
-      <div className="max-w-lg rounded-lg border bg-muted/50 p-4 text-left text-xs text-muted-foreground">
-        <p>
+    <Alert variant="destructive">
+      <IconAlertTriangle />
+      <AlertTitle>Could not load snapshot</AlertTitle>
+      <AlertDescription>
+        <p>{message}</p>
+        <p className="mt-3 text-xs">
           Start the API in another terminal:{" "}
-          <code className="rounded bg-background px-1 py-0.5 font-mono">
+          <code className="font-mono">
             go run ./cmd/terraview serve ./testdata/sample-project --no-ui
           </code>
         </p>
-        <p className="mt-2">
+        <p className="mt-2 text-xs">
           Then run the UI:{" "}
-          <code className="rounded bg-background px-1 py-0.5 font-mono">cd ui && npm run dev</code>
+          <code className="font-mono">cd ui && npm run dev</code>
         </p>
-      </div>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="rounded-lg border bg-background px-4 py-2 text-sm font-medium hover:bg-muted"
-      >
-        Try again
-      </button>
-    </div>
+      </AlertDescription>
+      <AlertAction>
+        <Button variant="outline" size="xs" onClick={onRetry}>
+          Try again
+        </Button>
+      </AlertAction>
+    </Alert>
   );
 }
 
