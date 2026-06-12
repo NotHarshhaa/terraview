@@ -4,6 +4,7 @@ import * as React from "react";
 
 import { IconLayersIntersect } from "@tabler/icons-react";
 
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -11,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 import {
   Tooltip,
   TooltipContent,
@@ -64,12 +66,13 @@ export function WorkspaceSwitcher({
     return (
       <Tooltip>
         <TooltipTrigger asChild>
-          <div className={className}>
-            <span className="inline-flex items-center gap-1.5 rounded-md border bg-muted/40 px-2 py-1 text-xs text-muted-foreground">
-              <IconLayersIntersect className="size-3.5" aria-hidden />
-              {current}
-            </span>
-          </div>
+          <Badge
+            variant="outline"
+            className={cn("gap-1.5 normal-case", className)}
+          >
+            <IconLayersIntersect className="size-3.5" aria-hidden />
+            {current}
+          </Badge>
         </TooltipTrigger>
         {providerCounts && (
           <TooltipContent>
@@ -90,7 +93,10 @@ export function WorkspaceSwitcher({
             onValueChange={onSwitch}
             disabled={switching}
           >
-            <SelectTrigger size="sm" className={className ?? "w-[9rem] gap-1.5"}>
+            <SelectTrigger
+              size="sm"
+              className={cn("w-[9rem] gap-1.5 normal-case", className)}
+            >
               <IconLayersIntersect className="size-3.5 shrink-0 opacity-70" aria-hidden />
               <SelectValue placeholder="Workspace" />
             </SelectTrigger>

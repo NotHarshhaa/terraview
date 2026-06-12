@@ -178,6 +178,7 @@ interface SnapshotState {
   snapshot: Snapshot | null;
   loading: boolean;
   error: string | null;
+  loadError: unknown;
   hasLoaded: boolean;
   authRequired: boolean;
   unauthorized: boolean;
@@ -189,6 +190,7 @@ export function useSnapshot() {
     snapshot: null,
     loading: true,
     error: null,
+    loadError: null,
     hasLoaded: false,
     authRequired: false,
     unauthorized: false,
@@ -218,6 +220,7 @@ export function useSnapshot() {
         snapshot: snap,
         loading: false,
         error: null,
+        loadError: null,
         hasLoaded: true,
         authRequired: snap.ui?.auth_required ?? false,
         unauthorized: false,
@@ -234,6 +237,7 @@ export function useSnapshot() {
         snapshot: prev.snapshot,
         loading: false,
         error: message,
+        loadError: err,
         hasLoaded: prev.hasLoaded,
         authRequired: unauthorized || prev.authRequired,
         unauthorized,
@@ -300,6 +304,7 @@ export function useSnapshot() {
         snapshot: snap,
         loading: false,
         error: null,
+        loadError: null,
         hasLoaded: true,
         authRequired: snap.ui?.auth_required ?? false,
         unauthorized: false,
@@ -315,6 +320,7 @@ export function useSnapshot() {
       setState((prev) => ({
         ...prev,
         error: message,
+        loadError: err,
         unauthorized,
         authRequired: unauthorized || prev.authRequired,
       }));
@@ -335,6 +341,7 @@ export function useSnapshot() {
         snapshot: snap,
         loading: false,
         error: null,
+        loadError: null,
         hasLoaded: true,
         authRequired: snap.ui?.auth_required ?? false,
         unauthorized: false,
@@ -374,6 +381,7 @@ export function useSnapshot() {
       snapshot: null,
       loading: true,
       error: null,
+      loadError: null,
       hasLoaded: false,
       authRequired: true,
       unauthorized: true,

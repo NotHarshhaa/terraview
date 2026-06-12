@@ -46,6 +46,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { SummaryBar } from "@/components/summary-bar";
 import { useSnapshot } from "@/lib/api";
+import { describeSnapshotLoadError } from "@/lib/api-errors";
 import {
   buildFacets,
   detectTagGroupKeys,
@@ -96,6 +97,7 @@ export function Dashboard() {
     snapshot,
     loading,
     error,
+    loadError,
     refresh,
     refreshing,
     hasLoaded,
@@ -669,7 +671,7 @@ export function Dashboard() {
           ) : !hasLoaded && loading ? (
             <LoadingState />
           ) : error && !snapshot ? (
-            <ErrorState message={error} onRetry={refresh} />
+            <ErrorState error={loadError ?? error} onRetry={refresh} />
           ) : snapshot ? (
             <>
               {error ? (
@@ -895,28 +897,28 @@ function LoadingState() {
 }
 
 function ErrorState({
-  message,
+  error,
   onRetry,
 }: {
-  message: string;
+  error: unknown;
   onRetry: () => void;
 }) {
+  const { title, cause, fix } = describeSnapshotLoadError(error);
+
   return (
     <Alert variant="destructive">
       <IconAlertTriangle />
-      <AlertTitle>Could not load snapshot</AlertTitle>
+      <AlertTitle>{title}</AlertTitle>
       <AlertDescription>
-        <p>{message}</p>
-        <p className="mt-3 text-xs">
-          Start the API in another terminal:{" "}
-          <code className="font-mono">
-            go run ./cmd/terraview serve ./testdata/sample-project --no-ui
-          </code>
-        </p>
-        <p className="mt-2 text-xs">
-          Then run the UI:{" "}
-          <code className="font-mono">cd ui && npm run dev</code>
-        </p>
+        <p>{cause}</p>
+        {fix ? (
+          <div className="mt-3 space-y-2 text-xs">
+            <p>Start the API in another terminal:</p>
+            <code className="block font-mono">{fix[0]}</code>
+            <p>Then run the UI:</p>
+            <code className="block font-mono">{fix[1]}</code>
+          </div>
+        ) : null}
       </AlertDescription>
       <AlertAction>
         <Button variant="outline" size="xs" onClick={onRetry}>
