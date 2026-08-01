@@ -248,7 +248,7 @@ func mergeAndClassify(decls []DeclaredResource, states []StateResource, plans []
 func metaFromAny(addr string, d *DeclaredResource, s *StateResource, p *PlanResource) (t, name, module, provider string) {
 	switch {
 	case s != nil:
-		provider := s.Provider
+		provider = s.Provider
 		if provider == "" {
 			provider = providerFromType(s.Type)
 		}

@@ -1,23 +1,41 @@
 package api
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/NotHarshhaa/terraview/internal/models"
 )
 
+func TestParseResourceFilterNormalizesCaseInsensitiveDimensions(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/resources?status=CREATED&provider=AWS&category=compute&tag=ENV%3Dprod", nil)
+	filter := ParseResourceFilter(req)
+
+	resources := []models.Resource{{
+		Address:  "aws_instance.web",
+		Status:   models.StatusCreated,
+		Tags:     map[string]string{"env": "prod"},
+		Category: models.Category{Provider: "AWS", Service: "Compute"},
+	}}
+	filtered := FilterResources(resources, filter)
+	if len(filtered) != 1 || filtered[0].Address != "aws_instance.web" {
+		t.Fatalf("case-insensitive filter should match resource, got %+v", filtered)
+	}
+}
+
 func TestFilterResourcesByTag(t *testing.T) {
 	resources := []models.Resource{
 		{
-			Address: "aws_instance.a",
-			Tags:    map[string]string{"env": "prod", "team": "platform"},
-			Status:  models.StatusCreated,
+			Address:  "aws_instance.a",
+			Tags:     map[string]string{"env": "prod", "team": "platform"},
+			Status:   models.StatusCreated,
 			Category: models.Category{Provider: "aws", Service: "Compute"},
 		},
 		{
-			Address: "aws_instance.b",
-			Tags:    map[string]string{"env": "dev"},
-			Status:  models.StatusCreated,
+			Address:  "aws_instance.b",
+			Tags:     map[string]string{"env": "dev"},
+			Status:   models.StatusCreated,
 			Category: models.Category{Provider: "aws", Service: "Compute"},
 		},
 	}
@@ -53,15 +71,15 @@ func TestFilterResourcesPagination(t *testing.T) {
 func TestBuildFacets(t *testing.T) {
 	facets := BuildFacets([]models.Resource{
 		{
-			Address: "aws_instance.a",
-			Module:  "//network",
-			Status:  models.StatusDrifted,
+			Address:  "aws_instance.a",
+			Module:   "//network",
+			Status:   models.StatusDrifted,
 			Category: models.Category{Provider: "aws", Service: "Compute"},
-			Tags:    map[string]string{"env": "prod"},
+			Tags:     map[string]string{"env": "prod"},
 		},
 		{
-			Address: "aws_instance.b",
-			Status:  models.StatusCreated,
+			Address:  "aws_instance.b",
+			Status:   models.StatusCreated,
 			Category: models.Category{Provider: "aws", Service: "Compute"},
 		},
 	})

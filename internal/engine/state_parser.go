@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -52,10 +53,10 @@ type rawStateFile struct {
 	Serial           int64  `json:"serial"`
 	Lineage          string `json:"lineage"`
 	Resources        []struct {
-		Module    string `json:"module"`
-		Mode      string `json:"mode"`
-		Type      string `json:"type"`
-		Name      string `json:"name"`
+		Module    string   `json:"module"`
+		Mode      string   `json:"mode"`
+		Type      string   `json:"type"`
+		Name      string   `json:"name"`
 		Provider  string   `json:"provider"`
 		DependsOn []string `json:"depends_on"`
 		Instances []struct {
@@ -118,12 +119,7 @@ func convertLegacyState(raw rawStateFile) []StateResource {
 		}
 		mod := normaliseModule(r.Module)
 		for i, inst := range r.Instances {
-			name := r.Name
-			if inst.IndexKey != nil {
-				name = fmt.Sprintf("%s[%v]", r.Name, inst.IndexKey)
-			} else if len(r.Instances) > 1 {
-				name = fmt.Sprintf("%s[%d]", r.Name, i)
-			}
+			name := stateInstanceName(r.Name, inst.IndexKey, i, len(r.Instances))
 			out = append(out, StateResource{
 				Address:    joinAddress(mod, r.Type, name),
 				Type:       r.Type,
@@ -139,13 +135,27 @@ func convertLegacyState(raw rawStateFile) []StateResource {
 	return out
 }
 
+func stateInstanceName(resourceName string, indexKey any, instanceIndex, instanceCount int) string {
+	if indexKey == nil {
+		if instanceCount > 1 {
+			return fmt.Sprintf("%s[%d]", resourceName, instanceIndex)
+		}
+		return resourceName
+	}
+	if key, ok := indexKey.(string); ok {
+		// Terraform addresses require JSON-style quotes around for_each keys.
+		return resourceName + "[" + strconv.Quote(key) + "]"
+	}
+	return fmt.Sprintf("%s[%v]", resourceName, indexKey)
+}
+
 // collectShowJSONModule recurses through a `terraform show -json` module
 // tree, appending every managed resource into out. The format is documented
 // at https://developer.hashicorp.com/terraform/internals/json-format.
 func collectShowJSONModule(raw json.RawMessage, parentAddress string, out *[]StateResource) {
 	var mod struct {
-		Address      string `json:"address"`
-		Resources    []struct {
+		Address   string `json:"address"`
+		Resources []struct {
 			Address      string         `json:"address"`
 			Mode         string         `json:"mode"`
 			Type         string         `json:"type"`
@@ -241,27 +251,67 @@ func providerNameFromTfProviderRef(ref, resourceType string) string {
 	return r
 }
 
-// extractTags pulls the most common tag map shapes (AWS: `tags`, Azure:
-// `tags`, GCP: `labels`, Kubernetes: `metadata.0.labels`) out of the flat
-// attribute bag and returns them as a string→string map for the UI.
+// extractTags pulls common provider tag layouts out of the attribute bag.
+// Explicit resource tags override provider defaults from `tags_all`; labels and
+// Kubernetes metadata labels are included so tag facets work consistently.
 func extractTags(attrs map[string]any) map[string]string {
-	out := map[string]string{}
 	if attrs == nil {
-		return out
+		return nil
 	}
-	for _, k := range []string{"tags", "labels"} {
-		if v, ok := attrs[k]; ok {
-			if m, ok := v.(map[string]any); ok {
-				for kk, vv := range m {
-					if s, ok := vv.(string); ok {
-						out[strings.ToLower(kk)] = s
-					}
-				}
-			}
-		}
-	}
+	out := map[string]string{}
+	addTagMap(out, attrs["tags_all"])
+	addTagMap(out, attrs["tags"])
+	addTagMap(out, attrs["labels"])
+	addTagMap(out, attrs["metadata.0.labels"])
+	addMetadataLabels(out, attrs["metadata"])
 	if len(out) == 0 {
 		return nil
 	}
 	return out
+}
+
+func addMetadataLabels(out map[string]string, metadata any) {
+	switch typed := metadata.(type) {
+	case map[string]any:
+		addTagMap(out, typed["labels"])
+	case []any:
+		for _, item := range typed {
+			if values, ok := item.(map[string]any); ok {
+				addTagMap(out, values["labels"])
+			}
+		}
+	}
+}
+
+func addTagMap(out map[string]string, raw any) {
+	add := func(key string, value any) {
+		if text, ok := tagString(value); ok {
+			out[strings.ToLower(key)] = text
+		}
+	}
+	switch values := raw.(type) {
+	case map[string]any:
+		for key, value := range values {
+			add(key, value)
+		}
+	case map[string]string:
+		for key, value := range values {
+			add(key, value)
+		}
+	}
+}
+
+func tagString(value any) (string, bool) {
+	switch typed := value.(type) {
+	case string:
+		return typed, true
+	case bool:
+		return strconv.FormatBool(typed), true
+	case float64:
+		return strconv.FormatFloat(typed, 'f', -1, 64), true
+	case json.Number:
+		return typed.String(), true
+	default:
+		return "", false
+	}
 }

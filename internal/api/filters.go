@@ -37,11 +37,11 @@ func ParseResourceFilter(r *http.Request) ResourceFilter {
 		}
 	}
 	return ResourceFilter{
-		Statuses:   splitCSVSet(q.Get("status")),
-		Providers:  splitCSVSet(strings.ToLower(q.Get("provider"))),
+		Statuses:   splitCSVSetFold(q.Get("status")),
+		Providers:  splitCSVSetFold(q.Get("provider")),
 		Modules:    splitCSVSet(q.Get("module")),
-		Categories: splitCSVSet(q.Get("category")),
-		Tags:       splitCSVSet(q.Get("tag")),
+		Categories: splitCSVSetFold(q.Get("category")),
+		Tags:       splitTagCSVSet(q.Get("tag")),
 		Search:     strings.ToLower(strings.TrimSpace(q.Get("q"))),
 		Address:    strings.TrimSpace(q.Get("address")),
 		Limit:      limit,
@@ -57,7 +57,7 @@ func FilterResources(resources []models.Resource, f ResourceFilter) []models.Res
 		if f.Address != "" && res.Address != f.Address {
 			continue
 		}
-		if len(f.Statuses) > 0 && !f.Statuses[string(res.Status)] {
+		if len(f.Statuses) > 0 && !f.Statuses[strings.ToLower(string(res.Status))] {
 			continue
 		}
 		if len(f.Providers) > 0 && !f.Providers[strings.ToLower(res.Category.Provider)] {
@@ -66,7 +66,7 @@ func FilterResources(resources []models.Resource, f ResourceFilter) []models.Res
 		if len(f.Modules) > 0 && !matchModuleFilter(res.Module, f.Modules) {
 			continue
 		}
-		if len(f.Categories) > 0 && !f.Categories[res.Category.Service] {
+		if len(f.Categories) > 0 && !f.Categories[strings.ToLower(res.Category.Service)] {
 			continue
 		}
 		if len(f.Tags) > 0 && !matchesTagFilter(res, f.Tags) {
@@ -184,4 +184,39 @@ func sortFacetCounts(items []FacetCount) {
 			}
 		}
 	}
+}
+
+func splitCSVSetFold(s string) map[string]bool {
+	values := splitCSVSet(s)
+	if len(values) == 0 {
+		return values
+	}
+	out := make(map[string]bool, len(values))
+	for value := range values {
+		out[strings.ToLower(value)] = true
+	}
+	return out
+}
+
+// splitTagCSVSet normalizes only tag keys; values retain their original case
+// because provider tag values are case-sensitive.
+func splitTagCSVSet(s string) map[string]bool {
+	values := splitCSVSet(s)
+	if len(values) == 0 {
+		return values
+	}
+	out := make(map[string]bool, len(values))
+	for value := range values {
+		key, tagValue, hasValue := strings.Cut(value, "=")
+		key = strings.ToLower(strings.TrimSpace(key))
+		if key == "" {
+			continue
+		}
+		if hasValue {
+			out[key+"="+tagValue] = true
+			continue
+		}
+		out[key] = true
+	}
+	return out
 }
